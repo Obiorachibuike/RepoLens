@@ -175,6 +175,7 @@ export const trackedRepositories = pgTable("tracked_repositories", {
   pushedAt: timestamp("pushed_at", { withTimezone: true }),
   firstTrackedAt: timestamp("first_tracked_at", { withTimezone: true }).notNull().defaultNow(),
   lastTrackedAt: timestamp("last_tracked_at", { withTimezone: true }),
+  lastWatchProbeAt: timestamp("last_watch_probe_at", { withTimezone: true }),
   nextCheckAt: timestamp("next_check_at", { withTimezone: true }).notNull().defaultNow(),
   trackingStatus: text("tracking_status").$type<"active" | "unavailable">().notNull().default("active"),
   priority: integer("priority").notNull().default(1),
@@ -258,8 +259,9 @@ export const aiMessages = pgTable("ai_messages", {
   content: text("content").notNull(),
   citations: jsonb("citations").$type<AiCitation[]>().notNull().default([]),
   confidence: text("confidence").$type<"confirmed" | "partial" | "insufficient">(),
+  answerCacheKey: text("answer_cache_key"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("ai_messages_conversation_id_idx").on(t.conversationId, t.id)]);
+}, (t) => [index("ai_messages_conversation_id_idx").on(t.conversationId, t.id), index("ai_messages_answer_cache_idx").on(t.answerCacheKey, t.createdAt.desc()).where(sql`${t.answerCacheKey} IS NOT NULL`)]);
 export const analysisUsage = pgTable("analysis_usage", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

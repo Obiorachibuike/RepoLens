@@ -1,6 +1,7 @@
 import { recordAnalysis } from "@/lib/workspace/analysis-history";
 import { fromError, ok } from "@/lib/api/respond";
 import { GithubApiError } from "@/lib/github/errors";
+import { enforceBudget } from "@/lib/infra/budget";
 import { collectEvidence } from "@/lib/analyze/collect";
 import { analyzeRepository } from "@/lib/analyze/analyze";
 
@@ -15,9 +16,10 @@ type Context = { params: Promise<{ owner: string; repo: string }> };
 export async function GET(request: Request, context: Context) {
   try {
     const { owner, repo } = await context.params;
+    await enforceBudget("analysis");
     const evidence = await collectEvidence({ owner, repo }, request.signal);
     const analysis = analyzeRepository(evidence);
-  await recordAnalysis(evidence.repository.fullName);
+    await recordAnalysis(evidence.repository.fullName);
     return ok({ analysis, repository: evidence.repository, unavailableCalls: evidence.failed, rateLimit: evidence.rateLimit });
   } catch (error) {
     if (error instanceof GithubApiError && error.kind === "not_found") {

@@ -42,13 +42,13 @@ export function inventory(files: SourceText[]) {
         if (typeof name !== "string" || !validName.test(name) || redactLine(name) !== name) return;
         const constraint = typeof raw === "string" ? raw.trim().slice(0, 130) : "";
         const candidate = constraint.replace(/^==\s*/, "");
-        const version = exactPatterns[ecosystem].test(candidate) ? candidate : null;
+        const version = exactPatterns[ecosystem].test(candidate) && redactLine(candidate) === candidate ? candidate : null;
         const normalizedName = ecosystem === "PyPI" ? name.toLowerCase().replace(/[-_.]+/g, "-") : name;
         const key = `${ecosystem}:${normalizedName}`;
         if (!resolved && relation === "direct") direct.add(key);
         const finalRelation = resolved && relation === "unknown" && direct.has(key) ? "direct" : relation;
         all.push({ name: normalizedName, ecosystem, version, constraint: constraint ? (safeRange.test(constraint) && redactLine(constraint) === constraint ? constraint : "Non-registry or unsupported constraint") : null, relation: finalRelation,
-          source: redactLine(file.path), resolved, license: typeof license === "string" && /^[A-Za-z0-9.()+ -]{1,90}$/.test(license) ? license : null, latest: null, outdated: null, advisories: null });
+          source: redactLine(file.path), resolved, license: typeof license === "string" && /^[A-Za-z0-9.()+ -]{1,90}$/.test(license) && redactLine(license) === license ? license : null, latest: null, outdated: null, advisories: null });
       };
       switch (nameOfFile) {
         case "package.json": {
@@ -213,7 +213,7 @@ async function npmLatest(dependencies: Dependency[]) {
   const small = dependencies.filter((dep) => dep.ecosystem === "npm" && dep.relation === "direct" && dep.version && stable.test(dep.version) && /^(?:@[\w.-]+\/)?[\w.-]+$/.test(dep.name)).slice(0, 6);
   await Promise.all(small.map(async (dep) => {
     try {
-      const latest = await getOrSetCachedData(`registry:npm:${dep.name}`, 21_600, async () => {
+      const latest = await getOrSetCachedData(`registry:npm:${createHash("sha256").update(dep.name).digest("hex")}`, 21_600, async () => {
         const response = await fetch(`https://registry.npmjs.org/${encodeURIComponent(dep.name)}/latest`, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(3000) });
         if (!response.ok) throw new Error("Registry lookup failed");
         const parsed = z.object({ version: z.string().max(100), license: z.string().max(100).optional() }).parse(JSON.parse(await boundedText(response, 256_000)));

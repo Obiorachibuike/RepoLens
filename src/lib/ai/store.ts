@@ -1,5 +1,6 @@
 import "server-only";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import type { Database } from "@/lib/db/client";
 import { aiConversations, aiMessages, analysisUsage } from "@/lib/db/schema";
 import { envInt } from "@/lib/infra/config";
@@ -19,7 +20,22 @@ export async function chatHistory(db: Database, userId: string, repository: stri
   return rows.reverse();
 }
 
-export async function addChatTurn(db: Database, user: string, repository: string, id: string | undefined, question: string, answer: ChatAnswer) {
+// Query scope is enforced by a join to the owning conversation. No private
+// prompts, history, or replies are sent to Redis or a CDN for caching.
+const cacheSeconds = () => envInt("AI_ANSWER_CACHE_TTL", 900, 0, 3600);
+const scopedKey = (user: string, repository: string, key: string) => createHash("sha256").update(JSON.stringify([user, repository, key])).digest("hex");
+
+export async function readCachedAnswer(db: Database, user: string, repository: string, key: string): Promise<ChatAnswer | null> {
+  const ttl = cacheSeconds();
+  if (!ttl) return null;
+  const [row] = await db.select({ content: aiMessages.content, citations: aiMessages.citations, confidence: aiMessages.confidence })
+    .from(aiMessages).innerJoin(aiConversations, eq(aiConversations.id, aiMessages.conversationId))
+    .where(and(eq(aiMessages.answerCacheKey, scopedKey(user, repository, key)), eq(aiMessages.role, "assistant"), eq(aiConversations.userId, user), eq(aiConversations.repository, repository), gte(aiMessages.createdAt, new Date(Date.now() - ttl * 1000))))
+    .orderBy(desc(aiMessages.createdAt)).limit(1);
+  return row?.confidence && row.confidence !== "insufficient" && row.citations.length ? { ...row, confidence: row.confidence } : null;
+}
+
+export async function addChatTurn(db: Database, user: string, repository: string, id: string | undefined, question: string, answer: ChatAnswer, cacheKey?: string) {
   // Redact all stored input and the title as well as sent excerpts.
   const safeQuestion = redactSource(question);
   return db.transaction(async (tx) => {
@@ -28,7 +44,7 @@ export async function addChatTurn(db: Database, user: string, repository: string
     if (!conversation) throw new GithubApiError({ kind: "not_found", message: "Conversation not found." });
     const entries = await tx.insert(aiMessages).values([
       { conversationId: conversation.id, role: "user", content: safeQuestion },
-      { conversationId: conversation.id, role: "assistant", content: answer.content, citations: answer.citations, confidence: answer.confidence },
+      { conversationId: conversation.id, role: "assistant", content: redactSource(answer.content), citations: answer.citations, confidence: answer.confidence, ...(cacheKey && cacheSeconds() ? { answerCacheKey: scopedKey(user, repository, cacheKey) } : {}) },
     ]).returning({ id: aiMessages.id, role: aiMessages.role, content: aiMessages.content, citations: aiMessages.citations, confidence: aiMessages.confidence, createdAt: aiMessages.createdAt });
     return { conversation: { id: conversation.id, title: conversation.title, updatedAt: conversation.updatedAt }, entries };
   });

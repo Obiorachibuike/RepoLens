@@ -4,6 +4,7 @@ import { getDatabase, type Database } from "@/lib/db/client";
 import { repositorySnapshots, trackedRepositories, type WatchSignals } from "@/lib/db/schema";
 import type { RepositoryDetail, RepositorySummary } from "@/lib/github/types";
 import { envInt } from "@/lib/infra/config";
+import { redactLine } from "@/lib/intelligence/redact";
 import { githubRepoUrl, repoRefSchema } from "@/lib/validation/repository";
 
 export const snapshotJob = "trending-snapshots";
@@ -20,7 +21,7 @@ function metadata(repo: RepositorySummary, subscribers: number | null) {
   const avatar = repo.owner.avatarUrl;
   return {
     githubRepositoryId: repo.id, owner: ref.owner, name: ref.repo, fullName: `${ref.owner}/${ref.repo}`,
-    description: repo.description?.slice(0, 2000), avatarUrl: avatar?.startsWith("https://avatars.githubusercontent.com/") ? avatar : null,
+    description: repo.description ? redactLine(repo.description).slice(0, 2000) : null, avatarUrl: avatar?.startsWith("https://avatars.githubusercontent.com/") ? avatar : null,
     primaryLanguage: repo.language?.slice(0, 60) ?? null, repositoryUrl: githubRepoUrl(ref), topics: repo.topics.slice(0, 24),
     currentStars: repo.stargazersCount, currentForks: repo.forksCount, openIssues: repo.openIssuesCount, watchers: subscribers,
     archived: repo.archived, githubCreatedAt: date(repo.createdAt), githubUpdatedAt: date(repo.updatedAt), pushedAt: date(repo.pushedAt),
@@ -44,7 +45,7 @@ export async function registerRepositories(repos: RepositorySummary[], source: T
     const existing = await tx.execute<{ id: string; github_repository_id: number | string; priority: number }>(sql`
       SELECT id, github_repository_id, priority FROM tracked_repositories WHERE github_repository_id IN (${ids}) AND tracking_status = 'active'`);
     const found = new Map(existing.rows.map((r) => [Number(r.github_repository_id), r]));
-    const rows = await tx.execute<{ total: number }>(sql`SELECT count(*)::int AS total FROM tracked_repositories WHERE tracking_status = 'active'`);
+    const rows = await tx.execute<{ total: number }>(sql`SELECT count(*)::int AS total FROM tracked_repositories t WHERE tracking_status = 'active' OR EXISTS (SELECT 1 FROM repository_watchlists w WHERE w.tracked_repository_id = t.id)`);
     const capacity = isPriority ? poolSize() : Math.floor(poolSize() * (source === "discovery" ? .75 : .55));
     let available = capacity - (rows.rows[0]?.total ?? 0);
     const registered: { id: string; githubRepositoryId: number }[] = [];
@@ -71,7 +72,7 @@ export async function trackBestEffort(repos: RepositorySummary[], source: Tracki
   try { await registerRepositories(repos, source); } catch { console.warn("[repolens] Repository tracking admission failed."); }
 }
 
-export async function saveObservation(db: Database, trackedId: string, repo: RepositoryDetail, capturedAt: Date, signals: WatchSignals = {}) {
+export async function saveObservation(db: Database, trackedId: string, repo: RepositoryDetail, capturedAt: Date, signals: WatchSignals = {}, probeAt?: Date) {
   const collectionSlot = new Date(Math.floor(capturedAt.getTime() / 3600_000) * 3600_000);
   const updated = metadata(repo, repo.subscribersCount);
   const next = new Date(capturedAt.getTime() + snapshotCadenceHours() * 3600_000);
@@ -80,7 +81,7 @@ export async function saveObservation(db: Database, trackedId: string, repo: Rep
       trackedRepositoryId: trackedId, stars: updated.currentStars, forks: updated.currentForks,
       openIssues: updated.openIssues, watchers: updated.watchers, archived: updated.archived, capturedAt, collectionSlot, signals,
     }).onConflictDoNothing().returning({ id: repositorySnapshots.id });
-    await tx.update(trackedRepositories).set({ ...updated, lastTrackedAt: capturedAt, nextCheckAt: next, failures: 0, trackingStatus: "active" })
+    if (written) await tx.update(trackedRepositories).set({ ...updated, lastTrackedAt: capturedAt, ...(probeAt && { lastWatchProbeAt: probeAt }), nextCheckAt: next, failures: 0, trackingStatus: "active" })
       .where(and(eq(trackedRepositories.id, trackedId), sql`(${trackedRepositories.lastTrackedAt} IS NULL OR ${lte(trackedRepositories.lastTrackedAt, capturedAt)})`));
     return Boolean(written);
   });

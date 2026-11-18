@@ -1,339 +1,138 @@
-# RepoLens — Find Your Next Project
+# RepoLens
 
-RepoLens is a full-stack GitHub search, repository discovery and repository intelligence
-application. You describe what you want — a concept, a repository, or a whole project idea —
-and RepoLens turns it into a real GitHub search, ranks the results with a documented scoring
-formula, and then lets you inspect, visualize and analyze any repository you find.
+**Understand Any Codebase. Discover What’s Possible.**
 
-Everything it shows comes from the GitHub REST API. Nothing is fabricated: no invented star
-counts, no placeholder charts, no fake "100% match" badges. When RepoLens cannot get data, it
-says so.
+RepoLens is a GitHub repository intelligence workspace. Search public GitHub repositories, explore their structure, compare maintenance signals, and follow changes over time. RepoLens distinguishes observations from heuristics and does not fill missing history, source evidence, or advisory coverage with invented data.
 
----
+## Start here
 
-## 1. Features
+Use Node.js 22.12+ (or Node.js 24 LTS) and npm. Use managed PostgreSQL and Upstash Redis for deployment. RepoLens itself does not need a separate worker or cache server.
 
-- **Three search modes** that share one design system but behave differently:
-  - `</> Repository` — raw GitHub query text plus structured filters, passed through verbatim.
-  - `⌕ Find Repo` — natural-language description of a repository → deterministic query construction.
-  - `♧ Project Idea` — natural-language project idea → keyword/technology extraction → real search
-    plus follow-up suggestions.
-- **Structured filters**: language, topics, minimum stars, minimum forks, created/updated date
-  ranges, license, archived inclusion/exclusion, and free-text qualifiers you type yourself.
-- **Sorting**: best match (GitHub's own ordering), most stars, most forks, recently updated,
-  most help-wanted issues — ascending or descending, paginated up to GitHub's 1,000-result window.
-- **Repository details page**: metadata, safely rendered README preview, file tree, contributors,
-  recent commits, and a save action.
-- **Visualize page**: real language distribution with correct percentages, directory tree,
-  contributors and recent activity — only from data GitHub returned.
-- **Analyze page**: an eight-section, evidence-based report (see §10).
-- **Saved repositories and collections**: persisted in PostgreSQL when `DATABASE_URL` is set,
-  otherwise in the browser with an explicit "not synced" notice.
-- **Search history** with the same storage rule, recorded server-side on the first page of a search.
-- **Discover page**: curated starting points plus three live GitHub-derived lists.
-- **Developer search** and **code search** (code search requires a GitHub token — the UI explains
-  this instead of pretending).
-- **Dark, dense, responsive UI**: results are a table on desktop and cards on mobile, with no
-  horizontal overflow.
-
-## 2. Tech stack
-
-| Layer      | Choice                                                            |
-| ---------- | ----------------------------------------------------------------- |
-| Framework  | Next.js 15.5 (App Router, Route Handlers, server components)      |
-| Language   | TypeScript 5.9, `strict` + `noUncheckedIndexedAccess`             |
-| UI         | React 19, Tailwind CSS v4, Radix UI primitives, lucide icons      |
-| Markdown   | `react-markdown` + `remark-gfm` + `rehype-sanitize`               |
-| Validation | Zod 4 (all query parameters and request bodies)                   |
-| Database   | PostgreSQL via Drizzle ORM + `pg` (optional)                      |
-| Testing    | Vitest 5 + Testing Library + jsdom                                |
-| Linting    | ESLint 9 with `eslint-config-next` (also enforced during build)   |
-
-There is no Redis, no job queue, no worker process and no extra backend service.
-
-## 3. Project structure
-
-```
-src/
-  app/                       pages + API route handlers
-    api/                     20 route handlers (see §12)
-    repository/[owner]/[repo]  details / visualize / analyze
-    search/{repositories,developers,code}
-    discover, saved, collections, history, settings
-  components/
-    ui/                      design-system primitives
-    search/                  modes, search bar, filters, results table, hook
-    repository/              header, README viewer, file tree
-    saved | collections | history | settings | developers | code
-  lib/
-    github/                  API client, mappers, search, repositories, errors
-    query/                   intent extraction, query building, relevance, follow-ups
-    analyze/                 evidence collection + deterministic analysis
-    validation/              zod schemas for every request
-    api/                     response helpers and shared response shapes
-    db/                      Drizzle schema, client, queries
-    storage/                 browser-local fallback + preferences
-drizzle/, scripts/migrate.mjs   SQL migration + runner
+```sh
+npm ci
+cp .env.example .env.local
+# If using PostgreSQL, set DATABASE_URL in .env.local, then:
+npm run db:migrate
+npm run dev
 ```
 
-## 4. Getting started
+Open `http://localhost:3000`. `npm run dev` and `npm start` bind to `0.0.0.0:3000`. The unauthenticated app can search public repositories and inspect metadata. Code search requires a GitHub PAT. Without PostgreSQL, saves, collections, search history, and local preferences remain in this browser; Trending, Watchtower, server-side report history, and chat need PostgreSQL. Without an AI provider, deterministic search and reports still work, and existing chat history remains readable.
 
-```bash
-npm install
-cp .env.example .env    # optional — every variable is optional
-npm run dev             # http://localhost:3000
+## Workspace
+
+| Area | What you can do |
+| --- | --- |
+| **Overview** `/` | Press `/` to focus search, open an `owner/repo` or GitHub URL, see recent health reports, saves, recommendations, and measured growth coverage. |
+| **Discover** | `/search/repositories` supports Repository, Find Repo, and Project Idea modes. `/discover` has live search lists, `/trending` measured growth, `/contributions` real open issues, and `/recommendations` filters and workspace preferences. `/search/developers` and `/search/code` retain their own search. |
+| **Analyze** `/analyze` | Jump to a repository's Details, Visualize, Analyze, Intelligence or Chat pages. `/compare` compares two or three distinct public repositories. Repository routes stay under `/repository/[owner]/[repo]`. |
+| **Workspace** | `/saved`, `/collections`, `/history`, `/analysis-history` and `/watchlist` expose this browser's workspace. Watchtower alerts are in-app, not email or webhooks. |
+| **Account** | `/settings` manages search and theme preferences. `/usage` shows your workspace's recorded provider attempts, tokens, and available cost estimates. `/diagnostics` is for operators with a separate credential. |
+
+Existing search URLs with `q`, `mode`, and filter parameters still work, including on `/`. **Repository** sends GitHub qualifiers with a public-only boundary. **Find Repo** extracts keywords and technologies without AI. **Project Idea** uses the same deterministic extractor and offers follow-up searches. If a discovery query is too strict, it can remove only inferred qualifiers, reports what changed, and never relaxes user filters. GitHub search has a 1,000-result paging window. The optional local relevance score is an ordering aid, not project quality: applicable weights are name 35%, description 30%, topics 20%, language 10%, and logarithmic star popularity 5%.
+
+Recommendations use explicit skill, language, technology and category filters. If no language is selected, RepoLens can use languages in recent saves and analyzed tracked repositories. Live suggestions use real GitHub topic, activity and issue filters; fast-growing suggestions need measured growth. Contribution Finder shows GitHub labels and assignment data. Difficulty suggestions are interpretations of labels, not verification that an issue is easy or still available.
+
+## How the data flows
+
+- **Next.js 15 App Router, React 19 and Tailwind CSS 4** serve the workspace and Route Handlers. Zod validates repository identifiers and request inputs. Server-only modules use `pg`/Drizzle and the shared GitHub REST client; the browser sends requests to relative app URLs.
+- **`src/lib/github/client.ts`** owns outbound GitHub read requests. It fixes the API host/version, restricts rename redirects, checks repository visibility before authenticated subresource access, and isolates representations by normalized query, resource, API version, media type, and credential fingerprint. Fresh cache hits avoid calls; expired eligible entries run conditional revalidation (`ETag` and `Last-Modified`). GitHub `304` reuses the prior body and records the validation time. Transient failures can return the last known good response; missing/forbidden resources invalidate it. Forced collector reads do not substitute stale values.
+- **Upstash REST** optionally shares bounded caches, leases, rate budgets and GitHub pacing across instances. Locks use expiring owner IDs and atomic compare-and-delete. The client coordinates core, search and code search separately and honors GitHub primary/secondary limit signals and `Retry-After`; it does not rotate credentials or aggressively retry. Discovery, analysis, snapshot and AI traffic have additional budgets. Without Redis, local caches and conservative process limits keep the app usable; they are not a cross-instance limiter. PostgreSQL still protects collector ownership and the daily AI attempt caps.
+- **PostgreSQL** owns user records and permanent observations. `src/lib/trending/` admits repositories, saves validated metadata and snapshots, and uses indexed nearest-prior lookups to rank them. Watchtower derives change records from those observations. Redis failure does not delete history.
+- **`src/lib/intelligence/`** reads GitHub text blobs from the default-branch commit and tree. It caps the tree at 12,000 entries and skips generated/vendor directories, symlinks, submodules, binary data, and unreadable files. No repositories are cloned or executed. Source links use the full commit SHA. The metadata analysis and visualizations are still available separately.
+- **`src/lib/ai/`** handles redacted excerpts, provider adapters, stream parsing, citation validation and private conversation persistence. It does not run tools on the user's behalf. The only external API origins used for report enrichment/chat are GitHub, the npm registry, OSV, and the configured OpenAI or Anthropic adapter; there are no user-supplied provider URLs.
+
+### Anonymous sessions and private data
+
+`POST /api/session` issues an opaque, random `httpOnly`, `SameSite=Lax` cookie. HTTPS responses use a `Secure` cookie. This is a **browser workspace**, not a GitHub sign-in or cross-device account. Clearing site data can lose access to that workspace. Saves, collections, analysis history, preferences, watchlists, chat, and personal usage are scoped to the persisted session. Private responses are not CDN-cached. Never grant the application PAT private repository access or type credentials into searches or chat. Source redaction is a best-effort safeguard, not proof a public repository contains no secrets.
+
+### Trending and Watchtower
+
+`GET /api/trending` defaults to `period=7d&ranking=growth&language=all&page=1&limit=20`. Results exclude archived repositories. Periods are **24 hours** (`today` or `24h`), `3d`, `7d`, `14d`, `30d`, and **365 days** (`1y` or `365d`), all rolling UTC windows. Choosing `custom` starts with **2026-10-01 through 2026-11-18**, inclusive UTC; send `startDate` and `endDate` as `YYYY-MM-DD`. Current-day ranges end at the current time. Reversed, future, invalid, and more-than-366-day ranges are rejected. The language list comes from the tracked pool and `all` includes unreported languages.
+
+For each boundary, the app uses the closest preceding observation within `SNAPSHOT_TOLERANCE_HOURS` (36 hours by default). Growth is `endingStars − startingStars` and requires distinct observations at both boundaries. `growth` ranks positive growth by stars gained and `percentage` ranks positive growth by `growth / startingStars × 100`; a zero start has no percentage. `stars` sorts by the latest recorded GitHub total, independently of growth coverage. Summaries are for the active filters, not just the current page. The API exposes actual observation timestamps, missing coverage, result count, and last collector status. It does **not** backfill October 2026 or infer past counts from current stars. On a clean install there is no growth ranking until the needed boundaries have been observed; longer windows can take months to populate.
+
+Tracking is bounded. Collector discovery, repository searches, detail views and verified saves can admit candidates; logged-in browser sessions (anonymous cookies) can explicitly request tracking or add a watch. Passive admission reserves capacity for saves and explicit tracking. A full pool rejects new admissions rather than erasing observations. Watchtower caps a workspace at 20 entries. Stars, open items (issues and PRs), and archive status are measured with each successful snapshot. Detailed checks rotate through up to eight watched repositories per run for releases, default-branch commit, contributor samples and root manifest changes. Advisory changes use a fresh dependency report for the same revision when available; the collector does not run a full advisory scan. A first or unavailable measurement is not a change. The view derives up to eight recent events from the latest 24 observations per repository and keeps the user's read marker and category preferences in PostgreSQL.
+
+### Intelligence, comparison, and chat
+
+| Report | Evidence and limits |
+| --- | --- |
+| **Health** | A 0–100 heuristic with default weights: maintenance 20; documentation, testing, organization, dependencies 15 each; community and releases 10 each. The score normalizes measured weights only. Coverage is measured weight divided by configured weight. Unknown categories remain visible and do not count as zero. |
+| **Architecture** | An explorable, zoomable map of evidenced path groups, with commit-pinned file links and SVG export. It does not assert a runtime call graph or inferred request paths. |
+| **Security and code quality** | Sample up to 12 eligible text files per review. Findings show location, confidence and suggested remediation, not exploitability. Credential-like evidence is redacted. The absence of findings does not establish safety. |
+| **Dependencies and SBOM** | Parse up to 10 supported manifests/lockfiles and retain up to 400 entries across npm, PyPI, Cargo, Go, Composer, RubyGems and Maven. Unknown versions, licenses and relationships stay unknown. Exact versions can be checked in a bounded OSV batch; up to six direct npm dependencies with stable versions can be compared to npm's latest tag. Export CycloneDX 1.5 for the inspected inventory, not a complete attestation. |
+| **Compare** | Compare reported counts and clearly labeled samples. Reuses a recent full health report when available; a partial fallback leaves missing categories unavailable. |
+| **AI chat** | Up to six redacted, line-numbered excerpts (14,000 characters), 1,800 user-question characters and six bounded prior turns. Chats and citations are stored per workspace/repository. Start, reopen, copy, or delete a conversation. The configured provider receives the question, recent turns and public source excerpts. |
+
+The backend consumes provider SSE by default where configured and sends NDJSON progress to the browser. It **buffers raw model output** until JSON structure, citation IDs, redaction and bounds checks succeed; no unchecked token or fabricated file link is displayed. A verified citation locates an excerpt, but does not guarantee that every claim is correct. A failed or invalid primary response can try one configured fallback. No provider call is made when there isn't readable evidence. Up to 15 minutes of exact, validated repeats can reuse an owned assistant message in PostgreSQL (context, model, prompt version and revision must match); no private prompts or answers are cached in Redis. Cache expiry does not delete chat history; deleting a conversation removes its associated reuse entries.
+
+## Environment variables
+
+Use `.env.local` or set server-only variables in the deployment environment. Do not use `NEXT_PUBLIC_` for credentials, commit filled-in environment files, or put bearer secrets in URLs. `.env.example` contains blank values and defaults in comments.
+
+| Variable | Purpose / default |
+| --- | --- |
+| `GITHUB_TOKEN` | One PAT with public read access only, e.g. a classic token with **no `repo` scope**. A supported fine-grained PAT should be limited to public repositories with no write permissions (check code search endpoint support). No organization, workflow, packages, or admin access is needed. GitHub normally allows 60 core requests/hour anonymously, 5,000/hour for a PAT, 10/30 search requests/minute respectively, and a separate authenticated code search bucket. RepoLens uses lower ceilings. |
+| `GITHUB_PERSONAL_ACCESS_TOKEN` | Optional legacy name, used only if `GITHUB_TOKEN` is empty. Do not configure a second active credential. |
+| `DATABASE_URL`, `PG_POOL_MAX` | PostgreSQL connection string (use TLS as required by your provider) and per-instance connection cap (4 by default). Managed pooled URLs are recommended for app traffic; use a direct/session-mode connection when applying migrations. |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | In Upstash, create/select a Redis database and copy its **HTTPS REST URL and REST token**, not a `redis://` TCP URL. Both are optional. Use different Redis and database resources for production and preview unless intentionally sharing them. |
+| `CRON_SECRET`, `DIAGNOSTICS_SECRET` | Independent server-only operator credentials. Use at least 32 cryptographically random characters (minimum accepted: 16). Without a valid value the corresponding endpoint denies all requests. |
+| `TRACKED_POOL_LIMIT`, `SNAPSHOT_INTERVAL_HOURS`, `SNAPSHOT_TOLERANCE_HOURS` | Defaults: 40 eligible repositories, 20 hours before a repository is due again, 36-hour prior-observation tolerance. Cadence is eligibility, not a scheduler. |
+| `SNAPSHOT_BATCH_SIZE`, `SNAPSHOT_CONCURRENCY` | Defaults: 40 due repositories per invocation and 3 concurrent observations. The job may defer work to stay within the runtime deadline and rate limits. |
+| `AI_PROVIDER`, `AI_MODEL` | `openai` or `anthropic`; use a model that accepts the adapter's request format. Defaults: `gpt-4.1-mini` (Chat Completions, JSON mode), `claude-haiku-4-5` (Messages). If provider is unset, an OpenAI key (or generic key) selects OpenAI, otherwise Anthropic if its key is set. |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `AI_API_KEY` | Provider-specific keys take precedence. `AI_API_KEY` is accepted for the primary only. |
+| `AI_FALLBACK_PROVIDER`, `AI_FALLBACK_MODEL` | Optional different provider using its own key; model uses that provider's default when unset. |
+| `AI_TIMEOUT_MS`, `AI_MAX_OUTPUT_TOKENS`, `AI_STREAM_UPSTREAM`, `AI_ANSWER_CACHE_TTL` | Per-provider timeout 12,000 ms, 950 output tokens, streaming on (`off` requests JSON instead), cache reuse TTL 900 seconds (`0` disables reuse). |
+| `AI_DAILY_GLOBAL_ATTEMPTS`, `AI_DAILY_SESSION_ATTEMPTS` | Durable UTC-day ceilings: 160 provider attempts across the instance's database, 24 per workspace. Fallback attempts consume reservations too. |
+| `{OPENAI,ANTHROPIC}_{INPUT,OUTPUT}_USD_PER_MTOK` | Optional model prices in USD per million tokens. Unset prices or unreported token counts mean cost is unknown, not zero. Estimates are not billing totals. For custom and fallback models, configure prices to match the selected provider/model. |
+| `REPOLENS_OVERVIEW_PROJECTS` | Set to `off` to skip the overview's optional recommendation lookup. |
+
+Other tunables are annotated in `.env.example`: resource TTLs (`GITHUB_*_TTL`, seconds), provider/report/advisory limits, category weights (`REPOLENS_HEALTH_*_WEIGHT`), and per-workflow route budgets (`REPOLENS_*_LIMIT`). Values outside the supported range fall back to defaults. TTL changes do not change the historical data retention policy.
+
+## Migrations and deployment
+
+RepoLens is a single Next.js application, suitable for Vercel or a Node host. `npm run db:migrate` applies ordered SQL in `drizzle/` under a PostgreSQL advisory lock and records it in `_repolens_migrations`. It is safe to run again. `0000` is the existing workspace; `0001` adds tracking, snapshots, jobs and watches; `0002` adds analysis history, private chat and usage; `0003` adds indexed chat reuse and rotates Watchtower probes. Back up existing data and **apply migrations to the intended database before serving upgraded traffic**. Do not reset the schema or run migrations at app startup, from a request, or with every parallel Vercel build. The checked-in SQL sequence is the migration runner's source of truth.
+
+1. Point the Vercel project at the repository, use Next.js and a supported Node.js version, and set the necessary environment variables for the appropriate environment. Migrate the corresponding PostgreSQL database first. Use a separate Preview database for branch smoke tests.
+2. Deploy a preview from the branch under review. Confirm the build succeeded and check `/api/config` (only configuration booleans), `/trending`, an intelligence view, and an authorized diagnostics request. Confirm Redis availability and PostgreSQL connectivity with diagnostics, not the presence of an environment variable alone. Leave `ARENA_PREVIEW` unset outside the isolated browser sandbox so normal anti-framing headers stay enabled.
+3. The checked-in `vercel.json` schedules **03:00 UTC daily** on Vercel production (`GET /api/cron/trending-snapshots`, `Authorization: Bearer <CRON_SECRET>`). This frequency works on Hobby; invocation time can drift and previews do not receive production cron events. For a manual or external scheduled run, send `POST` with the same header. To collect more often or process large pools, use a plan or external scheduler that supports the desired interval. Do not run a resident worker or bypass GitHub limits. Wait for the next configured run or retry via the scheduler after a pause; unprocessed rows stay due. Never use an external service that requires putting the secret in the URL.
+
+From an authorized operator shell with the appropriate variables already set:
+
+```sh
+curl --fail-with-body -X POST -H "Authorization: Bearer ${CRON_SECRET}" \
+  "${REPOLENS_URL}/api/cron/trending-snapshots"
+curl --fail-with-body -H "Authorization: Bearer ${DIAGNOSTICS_SECRET}" \
+  "${REPOLENS_URL}/api/admin/diagnostics"
 ```
 
-RepoLens works with **zero configuration**. Without a token you get GitHub's unauthenticated
-limits (60 core / 10 search requests per minute) and the UI tells you when they are exhausted.
+The job records rows processed, failures and deferred counts, and uses expiring Redis/local and PostgreSQL leases. HTTP `202` means another worker is running, `429` means collection paused on a limit, and `503` indicates missing prerequisites or job failure. Successful invocations can be partial. GitHub cache/limit counters and Redis operations in diagnostics describe the responding process; collection runs and usage aggregates come from PostgreSQL. Diagnostics never return credentials, connection strings, prompts, or raw upstream errors.
 
-## 5. Environment variables
+## Verification and API entry points
 
-| Variable       | Required | Effect                                                                                     |
-| -------------- | -------- | ------------------------------------------------------------------------------------------ |
-| `GITHUB_TOKEN` | No       | Raises limits to 5,000 core / 30 search per minute and unlocks GitHub **code search**.      |
-| `DATABASE_URL` | No       | Enables server-side saved repositories, collections, search history and preferences.        |
-| `AI_PROVIDER`  | No       | Reserved. RepoLens' discovery modes use a deterministic local extractor by default.         |
-| `AI_API_KEY`   | No       | Reserved. **No AI key is needed for search, discovery or analysis.**                        |
-| `AI_MODEL`     | No       | Reserved.                                                                                  |
-
-Tokens are only ever read on the server (`src/lib/github/client.ts`, `src/lib/db/client.ts`).
-Nothing is prefixed with `NEXT_PUBLIC_`, so no credential can reach the browser.
-`GET /api/config` exposes only booleans — never values (see §11).
-
-## 6. Search modes in detail
-
-| Mode           | Input                       | What RepoLens does                                                                                                            |
-| -------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `repository`   | Raw query text              | Passed to `GET /search/repositories` verbatim, so `topic:machine-learning language:Python stars:>100` works exactly as on GitHub. |
-| `find-repo`    | Description of a repository | Extracts technologies, topics, signals and keywords; builds a real query; shows the "how this was interpreted" panel.             |
-| `project-idea` | Description of an idea      | Same extraction, capped at four keywords, plus deterministic follow-up suggestions you can run with one click.                    |
-
-Switching modes changes the placeholder, the helper text, the request the UI sends and the
-panels that render — while keeping the same visual language.
-
-**Intent extraction is deterministic** (no network, no AI):
-`src/lib/query/intent.ts` removes GitHub qualifiers you typed (preserving their casing), matches
-technology aliases longest-first, matches category phrases as whole words (so `ar` never matches
-inside `library`), flags signals such as *lightweight*, *self-hosted*, *actively maintained* or
-*beginner friendly*, and drops stopwords. The `ignored` list is returned so the UI can show what
-was deliberately discarded.
-
-**Query construction** (`src/lib/query/build.ts`) records an audit trail for every qualifier with
-its `source`: `user`, `inferred` or `filter`. The query is capped at GitHub's 256-character limit;
-when something had to be dropped, the dropped terms are reported in `warnings`.
-
-**Automatic relaxation.** Discovery modes AND several inferred qualifiers together, which GitHub
-often matches too strictly. If a discovery query returns zero results, the route retries with up
-to two broader variants (first without inferred topics, then without inferred topics *and*
-language) and — only if one of them finds something — returns those results with `relaxed` set and
-a warning naming the dropped qualifiers. User-typed qualifiers and structured filters are never
-relaxed. If nothing matches at all, the precise query is kept and the empty state is shown.
-
-## 7. Relevance scoring — how it works and why it is honest
-
-GitHub does not return a relevance score. RepoLens therefore computes a **local, deterministic**
-0–100 score and labels it as such everywhere it appears (the column tooltip states this in words).
-
-| Signal           | Weight | Notes                                                              |
-| ---------------- | ------ | ------------------------------------------------------------------ |
-| Name match       | 0.35   | Exact name/owner match scores 1, otherwise token overlap.          |
-| Description      | 0.30   | Share of query terms present in the description.                   |
-| Topics           | 0.20   | Only when topics were requested.                                   |
-| Language         | 0.10   | Only when a language was requested or detected.                    |
-| Popularity       | 0.05   | `log10(stars) / 5`, capped — deliberately a small factor.          |
-
-Only the signals that apply are averaged (so a search without a language filter is not penalised).
-Bands: `exact` ≥ 90, `strong` ≥ 70, `good` ≥ 45, `partial` ≥ 20, otherwise `weak`. These thresholds
-are calibrated to what the formula can actually produce — an exact name match alone scores ~57,
-so it is shown as `good`, never as a fabricated 100%.
-
-GitHub's own ordering is preserved alongside the score as `githubRank`
-(`(page − 1) × perPage + index + 1`), and the tooltip shows it.
-
-## 8. GitHub API usage
-
-| Purpose             | Endpoint                                                    |
-| ------------------- | ----------------------------------------------------------- |
-| Repository search   | `GET /search/repositories`                                   |
-| Developer search    | `GET /search/users` (+ optional `GET /users/{login}` enrich) |
-| Code search         | `GET /search/code` (authenticated only)                      |
-| Repository details  | `GET /repos/{owner}/{repo}`                                  |
-| README              | `GET /repos/{owner}/{repo}/readme`                           |
-| Languages           | `GET /repos/{owner}/{repo}/languages`                        |
-| Contributors        | `GET /repos/{owner}/{repo}/contributors`                     |
-| Commits             | `GET /repos/{owner}/{repo}/commits`                          |
-| File tree           | `GET /repos/{owner}/{repo}/contents`                         |
-| Community profile   | `GET /repos/{owner}/{repo}/community/profile`                |
-| Latest release      | `GET /repos/{owner}/{repo}/releases/latest`                  |
-| Rate limits         | `GET /rate_limit`                                            |
-
-Client behaviour (`src/lib/github/client.ts`):
-
-- Requests are **de-duplicated** while in flight and served from a short in-memory cache when the
-  caller opts in (`cacheSeconds`), which keeps `/discover` (three live lists) cheap.
-- Every request has a **timeout** (aborted via `AbortSignal`) and respects the caller's signal.
-- Failures become typed `GithubApiError`s with a `kind`
-  (`rate_limited | unauthorized | forbidden | not_found | validation | unavailable | timeout | network | unknown`),
-  a human message, an optional hint and a reset time. Raw upstream payloads and stack traces never
-  reach the client.
-- The rate-limit bucket actually consumed (`core` vs `search`) is reported back with every response,
-  so the UI can show real remaining quota.
-
-## 9. Error handling
-
-| Situation                        | Status | What the visitor sees                                                             |
-| -------------------------------- | ------ | ---------------------------------------------------------------------------------- |
-| Invalid parameters               | 400    | "That search could not be processed" + per-field issues                            |
-| Bad or missing token             | 401    | Explains that the token is rejected, never echoes it                               |
-| Forbidden / secondary limit      | 403    | Explains the restriction and when to retry                                         |
-| Unknown repository               | 404    | "Repository not found" with a way back to search                                   |
-| Malformed query (`stars:>abc`)   | 422    | GitHub's validation message plus a hint about qualifier syntax                     |
-| Rate limit / secondary limit     | 429    | Reset time + `Retry-After`, plus a suggestion to set `GITHUB_TOKEN`                |
-| Timeout                          | 504    | "GitHub took too long to respond"                                                  |
-| Network failure / GitHub 5xx     | 502/503| "Could not reach GitHub's API" — no internal detail leaked                         |
-| Empty results                    | 200    | Empty state with a "Clear filters" action                                          |
-| Persistence not configured       | 503    | Names `DATABASE_URL` and states that data stays in the browser                     |
-
-## 10. Repository analysis — what it does and what it does not claim
-
-`src/lib/analyze/collect.ts` gathers evidence from six endpoints, and
-`src/lib/analyze/analyze.ts` turns it into a report with exactly eight sections:
-
-1. **Project overview** 2. **Technology stack** 3. **Maintenance indicators**
-4. **Documentation availability** 5. **Repository structure** 6. **Potential strengths**
-7. **Potential limitations** 8. **Recommended next steps**
-
-Rules the analysis obeys:
-
-- Every finding carries the endpoint it came from (`evidence`), e.g. `GET /repos (pushed_at)`.
-- Every finding is typed `fact` (read straight from the API) or `interpretation` (a judgement
-  RepoLens draws from those facts), and toned `positive | neutral | caution`.
-- Missing data is listed in `unavailable` — it is never guessed.
-- Toolchain detection comes from filenames (`package.json`, `Cargo.toml`, …) and is always
-  labelled an **inference**.
-- The report always carries this disclaimer: *"This analysis is generated from public GitHub
-  metadata only … RepoLens has not cloned, executed, tested or security-scanned this code."*
-
-## 11. Persistence and privacy
-
-- With `DATABASE_URL`: saved repositories, collections, search history and preferences live in
-  PostgreSQL (Drizzle schema in `src/lib/db/schema.ts`, migration in `drizzle/0000_init.sql`,
-  runner `npm run db:migrate`).
-- Without it: the same features work in `localStorage` under `repolens:*` keys, and the UI shows a
-  persistent notice that the data is **stored in this browser only and is not synced across devices**.
-  No fake "saved to your account" message is ever shown.
-- Identity is an anonymous, `httpOnly`, `sameSite=lax` cookie (`repolens_session`) created by
-  `POST /api/session`. No account, no email, no third-party login.
-- **Ownership is enforced on every private route**: each handler checks
-  `isDatabaseConfigured()` → `currentUserId()`, and every query is scoped to that user id.
-  Without a database you get 503, without a session 401 — never another visitor's data.
-- Credentials stay server-side. `GET /api/config` returns only booleans
-  (`github.authenticated`, `database`, `ai`, `codeSearch`) and is unit-tested to contain no
-  token, connection string or header.
-
-## 12. API reference
-
-All responses are JSON. Errors always use `{ error: { kind, message, hint, status, retryAfterSeconds, resetAt, issues? } }`.
-
-| Method | Path                                              | Purpose                                            |
-| ------ | ------------------------------------------------- | -------------------------------------------------- |
-| GET    | `/api/search/repositories`                        | All three search modes (`mode=repository\|find-repo\|project-idea`) |
-| GET    | `/api/search/developers`                          | GitHub user search with optional profile enrichment |
-| GET    | `/api/search/code`                                | Code search (requires `GITHUB_TOKEN`)               |
-| GET    | `/api/repositories/[owner]/[repo]`                | Repository details                                  |
-| GET    | `/api/repositories/[owner]/[repo]/readme`         | README (sanitized client-side, truncated flag)      |
-| GET    | `/api/repositories/[owner]/[repo]/languages`      | Byte counts + percentages                           |
-| GET    | `/api/repositories/[owner]/[repo]/contributors`   | Contributors                                        |
-| GET    | `/api/repositories/[owner]/[repo]/commits`        | Recent commits                                      |
-| GET    | `/api/repositories/[owner]/[repo]/contents`       | Directory listing / file tree                       |
-| GET    | `/api/repositories/[owner]/[repo]/analyze`        | Eight-section evidence-based analysis               |
-| GET    | `/api/rate-limit`                                 | Live GitHub `core` and `search` buckets             |
-| GET    | `/api/config`                                     | Booleans describing configured optional features    |
-| POST   | `/api/session`                                    | Create the anonymous session cookie                 |
-| GET/POST | `/api/saved`, PATCH/DELETE `/api/saved/[id]`     | Saved repositories                                  |
-| GET/POST | `/api/collections`, `/api/collections/[id]`, `/api/collections/[id]/repositories` | Collections      |
-| GET/POST/DELETE | `/api/history`                             | Search history                                      |
-| GET/PUT | `/api/preferences`                                | Default mode, sort, page size, theme                |
-
-## 13. Design system
-
-Dark, dense and calm — no glassmorphism, no oversized cards, no bright purple washes, no
-illustrations and no decorative animation. Colour tokens, the type scale and radii are defined once
-in `src/app/globals.css` (Tailwind v4 `@theme`) and used everywhere through the primitives in
-`src/components/ui/`. Type is Inter when available, falling back to a modern system stack
-(`next/font/google` cannot reach Google Fonts in restricted networks, so the font is requested via
-CSS rather than bundled).
-
-Layout constants that match the specification: hero heading
-**"Find Your Next Project"**, description **"Enter a concept to discover and analyze relevant
-open-source projects."**, both centred; a 720px search bar with a 52px input and an integrated
-Search button; per-mode helper text; a right-aligned sort control; and a wide results table.
-
-Results table (desktop): **Repository · Language · Stars · Relevance · Actions**, where Actions are
-compact labelled buttons — Details, Visualize, Analyze, GitHub (new tab) — plus a save toggle.
-Below `md` the same data renders as cards with a single Actions menu, so nothing scrolls sideways.
-
-## 14. Testing
-
-```bash
-npm test          # vitest run
-npm run test:watch
+```sh
+npm run typecheck
+npm run lint
+npm run test
+npm run build
 ```
 
-Current suite: **183 tests across 16 files**, all passing. Coverage focuses on behaviour that is
-easy to fake and hard to notice when it breaks:
+Tests exercise legacy search/README handling and the new workflows. PGlite runs the production snapshot query and SQL migrations in-process; it tests coverage, pagination, deduplication, ownership, cache expiry, watch preferences and protected routes. Outbound HTTP is mocked for GitHub client and AI transport tests (including `304`, cooldowns, Redis fallback, known-secret redaction, source pinning, model fallback and citation rejection). No live tokens are needed to run the suite.
 
-- **Query layer** — intent extraction (whole-word phrase matching, stopwords, qualifier
-  passthrough, signals), query building (qualifier audit trail, 256-character cap, discovery
-  fallbacks), relevance scoring and band thresholds.
-- **GitHub client** — error mapping for 401/403/404/422/429/5xx, timeout via `AbortSignal`,
-  in-flight de-duplication, and a test asserting the token can never be serialised into a payload.
-- **Route handlers** — search sorting/paging/`githubRank`/`beyondWindow`, discovery relaxation,
-  validation errors, and the private-data contract (503 without `DATABASE_URL`, 401 without a
-  session, user-scoped reads with one).
-- **Analysis** — all eight sections, fact vs interpretation typing, missing-data reporting,
-  archived/no-license/stale detection, and that the report never claims code was executed.
-- **UI** — mode switching changes placeholder/helper/API mode, results table links and formats,
-  README sanitisation (no `<script>`, no `onerror`, no `javascript:` URLs), and the browser-local
-  storage fallback.
+- `/api/trending`, `/api/contributions`, `/api/recommendations`, `/api/compare` are GET routes. Compare accepts repeated `repo=owner/name` parameters.
+- `/api/repositories/[owner]/[repo]/intelligence?view=health|architecture|security|dependencies|quality` reads a report. `view=dependencies&format=cyclonedx` downloads the SBOM. The existing detail, analyze, readme, languages, contents, contributors, and commits APIs remain available.
+- `/api/repositories/[owner]/[repo]/chat` supports GET/POST/DELETE with an owned conversation ID. The app negotiates NDJSON via `Accept: application/x-ndjson`; default API replies are JSON. `/api/usage` is scoped to the current session.
+- `/api/watchlist` supports GET/POST/PATCH/DELETE. `/api/tracking` POST admits a public repository on request. `/api/session`, `/api/saved`, `/api/collections`, `/api/history` and `/api/preferences` preserve workspace storage and behavior; recommendation settings extend the existing preference document.
 
-Tests run against mocked `fetch`, so they exercise the real code paths (routes, mappers,
-components) without spending GitHub quota.
+### Troubleshooting
 
-## 15. Deployment
+| Symptom | Check |
+| --- | --- |
+| Trending has no growth or a sparse language filter | Switch to Most Starred for current totals. Check recorded boundaries, elapsed time, cadence, and tolerance before changing the pool. There is no legitimate way to fill gaps with today's counts. |
+| Snapshot job not running or missing data | Check production Cron settings, separate `CRON_SECRET`, the public-read PAT, PostgreSQL migrations, job run status and any deployment protection. Increasing batch size alone won't raise available GitHub quota. |
+| Settings says services are configured but a feature fails | `/api/config` reports only presence. Check `/api/admin/diagnostics` for DB/Redis connectivity, recent collector states and usage. Missing/expired GitHub credentials cause `401`, and rate limiting surfaces retry timing. |
+| Reports lack exact versions/advisories | Lockfiles or parts of the tree may exceed sampling limits. OSV/npm registry access is separate from GitHub; unavailable advisory responses are not clean scans. Allow outbound HTTPS to `api.osv.dev` and `registry.npmjs.org` for these checks. |
+| Chat has no answer or numbers in usage are absent | Validate provider key/model and limits, then check PostgreSQL migrations and daily caps. Exact repeats can be reused without a new provider attempt. Some failures have no reported usage. Use a narrower codebase question instead of relying on model inference. |
+| Build or local GitHub TLS failures behind a proxy | Use the platform's trusted CA via `NODE_EXTRA_CA_CERTS`; do not disable certificate verification. If using a protected branch preview behind an iframe proxy, set `ARENA_PREVIEW=1` only in that sandbox. |
 
-RepoLens is a standard Next.js app and deploys to Vercel with no extra infrastructure:
-
-```bash
-npm run build && npm start
-```
-
-Add `GITHUB_TOKEN` (and optionally `DATABASE_URL`) in the project's environment variables. When you
-add a database, run `npm run db:migrate` once to apply `drizzle/0000_init.sql`. The app also runs on
-any Node host or Docker container; `npm run dev` and `npm start` bind to `0.0.0.0:3000`.
-
-Notes for restricted networks: server-side `fetch` needs the platform's CA bundle (on Node set
-`NODE_EXTRA_CA_CERTS`), and GitHub avatar images are loaded with `images.unoptimized` +
-plain `<img>` so no external image optimizer is required.
-
-## 16. Roadmap and limitations
-
-Known limitations, stated plainly:
-
-- GitHub caps search pagination at 1,000 results; the UI says so (`beyondWindow`) instead of
-  pretending there are more pages.
-- The relevance score is a local heuristic. It is useful for ordering and triage, not a measure of
-  project quality.
-- Repository analysis reads metadata only. It cannot judge code quality, security or test coverage,
-  and it does not try to.
-- GitHub's legacy code search returns 0 results for many valid-looking queries and requires a token;
-  RepoLens surfaces GitHub's own response and never substitutes repository results for code results.
-- Browser-local saves are per-device and are lost when site data is cleared — hence the notice.
-
-Possible next steps: saved search subscriptions, contributor-level analysis, comparison of two
-repositories, and an optional AI-assisted summary that is clearly labelled as AI output.
-
-## License
-
-MIT — see the repository for details.
+The baseline audit and implementation plan are in [docs/implementation.md](docs/implementation.md).

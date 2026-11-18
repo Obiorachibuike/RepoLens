@@ -11,13 +11,14 @@ import { acquireLease } from "@/lib/infra/redis";
 import { enforceBudget } from "@/lib/infra/budget";
 import { getCachedData } from "@/lib/infra/cache";
 import { envInt } from "@/lib/infra/config";
+import { redactLine } from "@/lib/intelligence/redact";
 import { poolSize, registerRepositories, saveObservation, snapshotJob } from "./store";
 
 const leaseMs = 90_000;
 const invocationBudgetMs = 43_000;
 const digest = (value: string) => createHash("sha256").update(value).digest("hex").slice(0, 32);
 
-type Due = { id: string; owner: string; name: string; github_repository_id: string; failures: number; watched: boolean };
+type Due = { id: string; owner: string; name: string; github_repository_id: string; failures: number; watched: boolean; last_watch_probe_at: Date | null };
 type Outcome = "collected" | "failed" | "duplicate";
 const kindOf = (error: unknown) => error instanceof GithubApiError ? error.kind : "unknown";
 
@@ -36,13 +37,15 @@ async function watchSignals(ref: RepoRef, signal: AbortSignal): Promise<WatchSig
   const releases = await request<{ tag_name?: string }[]>("releases", 1);
   const contributors = await request<{ login?: string }[]>("contributors", 12);
   const root = await request<{ name: string; sha: string }[]>("contents");
-  const advisories = head?.[0]?.sha ? await getCachedData<{ revision: string; label: string }>(`watch-advisories:${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}`) : null;
+  const revision = Array.isArray(head) && typeof head[0]?.sha === "string" && /^[a-f0-9]{40}$/i.test(head[0].sha) ? head[0].sha : undefined;
+  const advisories = revision ? await getCachedData<{ revision: string; label: string }>(`watch-advisories:${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}`) : null;
+  const release = Array.isArray(releases) ? releases.length ? (typeof releases[0]?.tag_name === "string" ? redactLine(releases[0].tag_name).slice(0, 160) : undefined) : "No published releases" : undefined;
   return {
-    ...(head?.[0]?.sha ? { head: head[0].sha } : {}),
-    ...(advisories && advisories.data.revision === head?.[0]?.sha ? { advisories: advisories.data.label } : {}),
-    ...(releases ? { release: releases[0]?.tag_name?.slice(0, 160) ?? "No published releases" } : {}),
-    ...(contributors ? { contributorSample: digest(contributors.map((entry) => entry.login ?? "").filter(Boolean).sort().join(",")) } : {}),
-    ...(Array.isArray(root) ? { manifestFingerprint: digest(root.filter((item) => /^(package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|requirements\.txt|pyproject\.toml|poetry\.lock|Cargo\.(?:toml|lock)|go\.(?:mod|sum)|Gemfile(?:\.lock)?|pom\.xml|composer\.(?:json|lock))$/.test(item.name)).map((item) => `${item.name}:${item.sha}`).sort().join(",")) } : {}),
+    ...(revision ? { head: revision } : {}),
+    ...(advisories && advisories.data.revision === revision ? { advisories: advisories.data.label } : {}),
+    ...(release ? { release } : {}),
+    ...(Array.isArray(contributors) && contributors.every((entry) => typeof entry?.login === "string" && entry.login) ? { contributorSample: digest(contributors.map((entry) => entry.login).sort().join(",")) } : {}),
+    ...(Array.isArray(root) && root.every((item) => typeof item?.name === "string" && typeof item.sha === "string") ? { manifestFingerprint: digest(root.filter((item) => /^(package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|requirements\.txt|pyproject\.toml|poetry\.lock|Cargo\.(?:toml|lock)|go\.(?:mod|sum)|Gemfile(?:\.lock)?|pom\.xml|composer\.(?:json|lock))$/.test(item.name)).map((item) => `${item.name}:${item.sha}`).sort().join(",")) } : {}),
   };
 }
 
@@ -53,8 +56,9 @@ async function observe(db: Database, item: Due, signal: AbortSignal, enrich: boo
     const { data, observedAt, stale, hasSnapshotCounts } = await getRepository(ref, signal, "validate");
     if (stale || !hasSnapshotCounts) throw new Error("Missing snapshot evidence");
     if (String(data.id) !== String(item.github_repository_id)) throw new GithubApiError({ kind: "not_found", status: 404, message: "Repository identity changed." });
-    const signals = enrich && !signal.aborted ? await watchSignals({ owner: data.owner.login, repo: data.name }, signal) : {};
-    return await saveObservation(db, item.id, data, new Date(observedAt), signals) ? "collected" : "duplicate";
+    const probeAt = enrich && !signal.aborted ? new Date() : undefined;
+    const signals = probeAt ? await watchSignals({ owner: data.owner.login, repo: data.name }, signal) : {};
+    return await saveObservation(db, item.id, data, new Date(observedAt), signals, probeAt) ? "collected" : "duplicate";
   } catch (error) {
     const kind = kindOf(error);
     if (signal.aborted || kind === "rate_limited" || kind === "unauthorized") throw error;
@@ -115,20 +119,27 @@ async function runBatch(db: Database) {
     }
     const limit = envInt("SNAPSHOT_BATCH_SIZE", 40, 1, 60);
     const due = await db.execute<Due>(sql`
-      SELECT t.id, t.owner, t.name, t.github_repository_id, t.failures,
-        EXISTS (SELECT 1 FROM repository_watchlists w WHERE w.tracked_repository_id = t.id) AS watched
-      FROM tracked_repositories t
-      WHERE t.tracking_status = 'active' AND NOT t.archived AND t.next_check_at <= now()
-      ORDER BY t.next_check_at, t.priority DESC, t.id LIMIT ${limit + 1}
+      WITH candidates AS (
+        SELECT t.id, t.owner, t.name, t.github_repository_id, t.failures, t.last_watch_probe_at, t.priority,
+          t.archived, t.tracking_status, t.next_check_at,
+          EXISTS (SELECT 1 FROM repository_watchlists w WHERE w.tracked_repository_id = t.id) AS watched
+        FROM tracked_repositories t WHERE t.next_check_at <= now()
+      )
+      SELECT id, owner, name, github_repository_id, failures, last_watch_probe_at, watched
+      FROM candidates WHERE (tracking_status = 'active' AND NOT archived) OR watched
+      ORDER BY next_check_at, priority DESC, id LIMIT ${limit + 1}
     `);
     eligible = due.rows.length;
     const queue = due.rows.slice(0, limit);
-    let enriched = 0;
+    // Only probe the least recently checked watched repositories in the due
+    // batch. Never let the same first eight consume every run's probe allowance.
+    const probeIds = new Set(queue.filter((item) => item.watched)
+      .sort((a, b) => +(a.last_watch_probe_at ?? 0) - +(b.last_watch_probe_at ?? 0)).slice(0, 8).map((item) => item.id));
     const concurrency = envInt("SNAPSHOT_CONCURRENCY", 3, 1, 3);
     for (let offset = 0; offset < queue.length; offset += concurrency) {
       if (Date.now() - started > invocationBudgetMs - 6000 || signal.aborted) { reason = "batch_deadline"; break; }
       const wave = await Promise.allSettled(queue.slice(offset, offset + concurrency).map((item) =>
-        observe(db, item, signal, item.watched && enriched++ < 8 && Date.now() - started < 24_000)));
+        observe(db, item, signal, probeIds.has(item.id) && Date.now() - started < 24_000)));
       let stop = false;
       for (const item of wave) {
         if (item.status === "rejected") {

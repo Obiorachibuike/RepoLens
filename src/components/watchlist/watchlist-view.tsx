@@ -27,7 +27,7 @@ export function WatchlistView({ initial }: { initial: string }) {
     const response = await fetch("/api/watchlist", { signal });
     const data = await response.json() as { items: WatchItem[]; intervalHours: number; error?: { message?: string } };
     if (!response.ok) throw new Error(data.error?.message ?? "Could not load Watchtower.");
-    setItems(data.items); setHours(data.intervalHours);
+    if (!signal?.aborted) { setItems(data.items); setHours(data.intervalHours); }
   }, []);
   useEffect(() => {
     if (!config.database) return;
@@ -66,12 +66,13 @@ export function WatchlistView({ initial }: { initial: string }) {
       {items.map((item) => <article key={item.id} className={cn(panel, "space-y-3 p-4")}>
         <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h2><Link href={repoLensUrl({ owner: item.owner, repo: item.name })} className="break-words font-semibold hover:text-accent-hover">{item.owner}/{item.name}</Link></h2><p className="mt-1 text-xs text-text-muted">{item.archived ? "Archived" : item.status === "unavailable" ? "Not available on GitHub" : item.lastChecked ? `Last checked ${formatDateTime(item.lastChecked)}` : "Waiting for the first observation"}</p></div>
           <div className="flex flex-wrap items-center gap-1.5"><span className={cn("flex items-center gap-1.5 rounded-md px-2 py-1 text-xs", item.unread ? "bg-accent-soft text-accent-hover" : "text-text-muted")}>{item.unread ? <Bell className="size-3.5" /> : <BellOff className="size-3.5" />}{item.unread} unread</span>{item.unread > 0 && <Button size="sm" variant="ghost" disabled={pending !== null} onClick={() => void change("PATCH", item.id, { id: item.id, markRead: true }, "Changes marked read.")}><Check /> Mark read</Button>}<Button size="icon" variant="ghost" aria-label={`Stop watching ${item.owner}/${item.name}`} disabled={pending !== null} onClick={() => { if (window.confirm(`Stop watching ${item.owner}/${item.name}?`)) void change("DELETE", item.id, undefined, "Repository removed from your watchlist."); }}><Trash2 /></Button></div></div>
+        <p className="text-xs text-text-muted">{item.lastProbe ? `Last detailed check attempted ${formatDateTime(item.lastProbe)}` : "Waiting for a detailed check"}</p>
         <details className="rounded-md border border-border-subtle bg-background/50 p-3"><summary className="cursor-pointer text-sm font-medium">Recent changes</summary>
           {item.events.length ? <ul className="mt-2 divide-y divide-border-subtle">{item.events.map((event) => <li key={event.at} className="py-2 text-xs"><p className="font-medium text-text-secondary">{formatDateTime(event.at)}{event.unread && " · New"}</p><ul className="mt-1 space-y-1 text-text-muted">{event.changes.map((change) => <li key={change.category}>{change.label}: {change.before} → {change.after}</li>)}</ul></li>)}</ul> : <p className="mt-2 text-xs text-text-muted">No changes recorded in the available observations and enabled categories.</p>}
         </details>
         <details className="rounded-md border border-border-subtle p-3"><summary className="cursor-pointer text-sm font-medium">Notification preferences</summary><div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">{(Object.keys(watchLabels) as (keyof WatchItem["preferences"])[]).map((key) => <label key={key} className="flex items-center gap-1.5 text-xs text-text-secondary"><input type="checkbox" checked={item.preferences[key]} disabled={pending !== null} onChange={(e) => void change("PATCH", item.id, { id: item.id, preferences: { [key]: e.target.checked } }, "Notification preferences saved.")} />{watchLabels[key]}</label>)}</div></details>
       </article>)}
     </section> : <div className={panel}><EmptyState icon={<Bell className="size-5" />} title="No repositories monitored" description="Add a repository to start recording changes. A baseline isn't a change notification; at least two successful observations are needed." /></div>}
-    <p className="mt-4 text-xs leading-relaxed text-text-muted">Release, commit, contributor, and manifest checks are sampled for a bounded number of watched repositories per run. Advisory changes use a recent matching dependency report if one is available. Missing measurements do not generate an alert.</p>
+    <p className="mt-4 text-xs leading-relaxed text-text-muted">Release, commit, contributor, and manifest checks rotate through a bounded number of watched repositories per run. Advisory changes use a recent matching dependency report if one is available. Missing measurements do not generate an alert.</p>
   </div>;
 }

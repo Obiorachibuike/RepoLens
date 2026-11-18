@@ -47,7 +47,7 @@ export function Dashboard({ data }: { data: DashboardData }) {
       </Link>)}
     </section>
 
-    <div className="mt-7 flex flex-wrap items-end justify-between gap-2"><div><p className="text-xs font-medium text-accent-hover">Your research at a glance</p><h2 className="mt-1 text-[22px] font-semibold tracking-tight">Workspace overview</h2></div><p className="flex items-center gap-2 text-xs text-text-muted"><StatusDot live={trending?.freshness === "fresh"} />{latest ? `Snapshot collection ${trending?.freshness === "stale" ? "stale" : "active"}` : data.configured ? "Awaiting first snapshot" : "Historical tracking not configured"}</p></div>
+    <div className="mt-7 flex flex-wrap items-end justify-between gap-2"><div><p className="text-xs font-medium text-accent-hover">Your research at a glance</p><h2 className="mt-1 text-[22px] font-semibold tracking-tight">Workspace overview</h2></div><p className="flex items-center gap-2 text-xs text-text-muted"><StatusDot live={trending?.freshness === "fresh"} />{latest ? trending?.freshness === "stale" ? "Snapshots are stale" : "Recent observations available" : data.configured ? "Awaiting first snapshot" : "Historical tracking not configured"}</p></div>
     <section aria-label="Workspace metrics" className="mt-3 grid grid-cols-2 gap-2.5 xl:grid-cols-4">
       <Metric label="Tracked repositories" value={trending?.summary.trackedCount ?? "—"} detail={data.configured ? "Public, non-archived pool" : "PostgreSQL required"} icon={<Radio className="size-4" />} />
       <Metric label="7-day growth coverage" value={trending ? `${trending.summary.coverageCount} / ${trending.summary.trackedCount}` : "—"} detail="Two snapshots at the boundaries" icon={<TrendingUp className="size-4" />} />

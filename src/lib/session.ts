@@ -19,18 +19,19 @@ export async function readSessionKey(): Promise<string | null> {
 }
 
 /**
- * Maps a session key to a user row, creating one on first use.
+ * Maps an existing session key to a user row. Only the session bootstrap
+ * creates a session; unrelated route reads never write a new user.
  * Returns null when PostgreSQL is not configured (callers fall back to
  * browser-local storage) — never throws for missing infrastructure.
  */
-export async function resolveUserId(sessionKey: string | null): Promise<string | null> {
+export async function resolveUserId(sessionKey: string | null, create = false): Promise<string | null> {
   if (!sessionKey) return null;
   const db = getDatabase();
   if (!db) return null;
 
   const existing = await db.select({ id: users.id }).from(users).where(eq(users.anonymousKey, sessionKey)).limit(1);
   const found = existing[0];
-  if (found) return found.id;
+  if (found || !create) return found?.id ?? null;
 
   const inserted = await db
     .insert(users)

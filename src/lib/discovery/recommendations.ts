@@ -1,5 +1,6 @@
 import "server-only";
 import { sql } from "drizzle-orm";
+import { enforceBudget } from "@/lib/infra/budget";
 import { getDatabase } from "@/lib/db/client";
 import { currentUserId } from "@/lib/session";
 import { getPreferences } from "@/lib/db/queries";
@@ -45,6 +46,7 @@ export async function recommendProjects(profile: RecommendationProfile, signals:
     const items = result.repositories.filter((repo) => !signals.saved.has(repo.fullName.toLowerCase())).slice(0, 12).map((repo) => ({ ref: { owner: repo.owner, repo: repo.name }, description: repo.description, language: repo.language, stars: repo.currentStars, reason: `Gained ${repo.starGrowth} stars between measured observations in the 7-day view` }));
     return { items, reason: `${reason}. Fast-growing suggestions use snapshot growth; skill and technology filters apply to live categories.`, coverageMissing: result.summary.coverageCount === 0 };
   }
+  await enforceBudget("discovery");
   const beginner = profile.category === "beginner" || profile.skill === "beginner";
   const topic = profile.technology || (profile.category in topics ? topics[profile.category as keyof typeof topics] : "");
   const pushed = new Date(Date.now() - 120 * 86400_000).toISOString().slice(0, 10);

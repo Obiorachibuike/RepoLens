@@ -277,6 +277,30 @@ describe("shared-safe cache and validators", () => {
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy.mock.calls[0]?.[0]).toBe("https://api.github.com/repos/a/b");
   });
+  it("revalidates visibility independently of long-lived repository metadata", async () => {
+    vi.stubEnv("GITHUB_TOKEN", TOKEN);
+    const spy = mockFetch(async () => jsonResponse(200, spy.mock.calls.length === 1 ? { private: false } : { private: true }));
+    const time = Date.now();
+    try {
+      await githubRequest({ path: "/repos/a/b" });
+      vi.setSystemTime(time + 61_000);
+      await expect(githubRequest({ path: "/repos/a/b/git/blobs/abc" })).rejects.toMatchObject({ kind: "not_found" });
+      expect(spy.mock.calls.map(([url]) => url)).toEqual(["https://api.github.com/repos/a/b", "https://api.github.com/repos/a/b"]);
+    } finally { vi.useRealTimers(); vi.unstubAllEnvs(); }
+  });
+  it("retains only a last-known-good response after transient errors; forced observations fail", async () => {
+    let n = 0;
+    const spy = mockFetch(async () => ++n === 1 ? jsonResponse(200, { stargazers_count: 25 }) : jsonResponse(503, { message: "Bad gateway" }));
+    const options = { path: "/repos/a/b", cacheSeconds: 1 };
+    const time = Date.now();
+    try {
+      await githubRequest(options);
+      vi.setSystemTime(time + 10_000);
+      expect(await githubRequest(options)).toMatchObject({ data: { stargazers_count: 25 }, meta: { freshness: "stale" } });
+      await expect(githubRequest({ ...options, refresh: "validate" })).rejects.toMatchObject({ kind: "unavailable" });
+      expect(spy).toHaveBeenCalledTimes(3);
+    } finally { vi.useRealTimers(); }
+  });
   it("backs off on unlabelled secondary Retry-After and sends no aggressive retry", async () => {
     const spy = mockFetch(async () => jsonResponse(403, { message: "You have exceeded a secondary rate limit" }));
     await expect(githubRequest({ path: "/search/repositories" })).rejects.toMatchObject({ kind: "rate_limited", retryAfterSeconds: 60 });

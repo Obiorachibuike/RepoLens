@@ -8,7 +8,7 @@ import { assertRef } from "@/lib/github/repos";
 import { GithubApiError } from "@/lib/github/errors";
 import { enforceBudget } from "@/lib/infra/budget";
 import { acquireLease } from "@/lib/infra/redis";
-import { addChatTurn, chatHistory, ownedConversation, usageFor } from "@/lib/ai/store";
+import { addChatTurn, chatHistory, ownedConversation, readCachedAnswer, usageFor } from "@/lib/ai/store";
 import { answerQuestion, allowQuestion, isAiConfigured } from "@/lib/ai/provider";
 import { retrieveContext } from "@/lib/ai/context";
 import { redactSource } from "@/lib/intelligence/redact";
@@ -73,9 +73,11 @@ export async function POST(request: Request, context: Context) {
         progress("Retrieving repository evidence…");
         const previous = history.filter((item) => item.role === "user").at(-1)?.content.slice(0, 260) ?? "";
         const sources = allowQuestion(question) ? await retrieveContext(ref, `${question}\n${previous}`, request.signal) : null;
-        progress("Checking answer and citations…");
-        const answer = await answerQuestion(question, history, sources, usageFor(db, user), request.signal);
-        return await addChatTurn(db, user, repository, conversationId, question, answer);
+        const { answer, cacheKey } = await answerQuestion(question, history, sources, usageFor(db, user), {
+          signal: request.signal, progress, cachedAnswer: (key) => readCachedAnswer(db, user, repository, key),
+        });
+        request.signal.throwIfAborted();
+        return await addChatTurn(db, user, repository, conversationId, question, answer, cacheKey);
       } finally { await lease.release(); }
     };
 

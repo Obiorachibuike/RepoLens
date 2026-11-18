@@ -1,5 +1,6 @@
 import "server-only";
 import { githubRequest } from "./client";
+import { redactSource } from "@/lib/intelligence/redact";
 import { repoRefSchema, repoFilePath, type RepoRef } from "@/lib/validation/repository";
 export type { RepoRef } from "@/lib/validation/repository";
 import { GithubApiError } from "./errors";
@@ -73,7 +74,7 @@ export async function getReadme(ref: RepoRef, signal?: AbortSignal): Promise<Rea
     const content = typeof data === "string" ? data : "";
     const tooBig = content.length > MAX_README_BYTES;
     return {
-      content: tooBig ? content.slice(0, MAX_README_BYTES) : content,
+      content: redactSource(tooBig ? content.slice(0, MAX_README_BYTES) : content),
       missing: false,
       truncated: tooBig,
       bytes: content.length,

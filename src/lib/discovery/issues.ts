@@ -1,4 +1,6 @@
 import "server-only";
+import { enforceBudget } from "@/lib/infra/budget";
+import { GithubApiError } from "@/lib/github/errors";
 import { githubRequest } from "@/lib/github/client";
 import { getCommunityProfile, getRepository } from "@/lib/github/repos";
 import { repoRefSchema, githubRepoUrl } from "@/lib/validation/repository";
@@ -8,6 +10,7 @@ import { contributionLabels, type IssueFilters } from "./filters";
 type RawIssue = { id: number; number: number; title: string; body?: string; assignee?: unknown; labels?: { name: string }[]; created_at: string; pull_request?: unknown; repository_url: string };
 export type Contribution = { id: number; title: string; description: string | null; ref: { owner: string; repo: string }; language: string | null; labels: string[]; age: string; url: string; unassigned: boolean; estimate: string; contributing: string | null };
 export async function findContributions(filters: IssueFilters) {
+  await enforceBudget("discovery");
   const query = `is:issue is:open is:public archived:false label:"${contributionLabels[filters.label]}"${filters.unassigned === "true" ? " no:assignee" : ""}${filters.language ? ` language:"${filters.language}"` : ""}`;
   const perPage = 8;
   const { data } = await githubRequest<{ total_count: number; incomplete_results?: boolean; items: RawIssue[] }>({ path: "/search/issues", query: { q: query, page: filters.page, per_page: perPage, sort: "created", order: "desc" } });
@@ -27,7 +30,9 @@ export async function findContributions(filters: IssueFilters) {
         const guide = profile?.files?.contributing as { html_url?: unknown } | undefined;
         const contributing = typeof guide?.html_url === "string" && guide.html_url.startsWith(`${githubRepoUrl(ref)}/`) ? guide.html_url : null;
         metadata.set(key, { language: repo.data.language, contributing, hidden: repo.data.archived });
-      } catch { /* Labels and links still came from a public issue query. */ }
+      } catch (error) {
+        if (error instanceof GithubApiError && ["forbidden", "not_found"].includes(error.kind)) metadata.set(key, { language: null, contributing: null, hidden: true });
+      }
     }));
   }
   const items: Contribution[] = valid.flatMap(({ item, ref }) => {

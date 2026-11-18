@@ -9,6 +9,7 @@ const policies = {
   trending: { limit: 2, seconds: 3600 },
   snapshot: { limit: 240, seconds: 3600 },
   analysis: { limit: 18, seconds: 60 },
+  discovery: { limit: 24, seconds: 60 },
   refresh: { limit: 10, seconds: 3600 },
   ai: { limit: 12, seconds: 3600 },
   "ai-global": { limit: 160, seconds: 86400 },

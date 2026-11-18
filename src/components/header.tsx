@@ -54,7 +54,11 @@ function Navigation({ mobile = false }: { mobile?: boolean }) {
       <summary className="flex min-h-8 cursor-pointer list-none items-center gap-2 rounded-lg px-2.5 text-xs font-medium text-text-muted hover:bg-surface-hover [&::-webkit-details-marker]:hidden"><ChevronRight className="size-3.5 group-open:rotate-90" /> More discovery tools</summary>
       <div className="mt-0.5 space-y-0.5">{more.map(render)}</div>
     </details>
-    <div className="border-t border-border-subtle pt-2">{render({ label: "Settings", href: "/settings", icon: Settings })}</div>
+    <div className="space-y-0.5 border-t border-border-subtle pt-2">
+      <p className="mb-1.5 px-2.5 font-mono text-[10px] font-semibold uppercase tracking-[.13em] text-text-muted">Account</p>
+      {render({ label: "Settings", href: "/settings", icon: Settings })}
+      {render({ label: "AI usage", href: "/usage", icon: Activity })}
+    </div>
   </nav>;
 }
 

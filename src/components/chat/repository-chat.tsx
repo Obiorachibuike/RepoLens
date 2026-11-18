@@ -132,7 +132,7 @@ export function RepositoryChat({ endpoint }: { endpoint: string }) {
         </div>
         <form className="border-t border-border-subtle p-4" onSubmit={send}>
           <div className="flex items-end gap-2"><textarea ref={area} className={cn(field, "min-h-18 resize-y py-2")} aria-label="Ask a question" placeholder="Ask about a module, API route, or workflow…" maxLength={1800} value={question} onChange={(event) => setQuestion(event.target.value)} disabled={!ready || !config.ai || busy} /><Button aria-label="Send question" type="submit" variant="primary" size="icon" className="size-10" disabled={!ready || !config.ai || busy || question.trim().length < 3}><ArrowUp /></Button></div>
-          <p className="mt-2 text-xs text-text-muted">Only bounded public excerpts are sent to the configured AI provider. Never enter credentials. Answers may be incomplete.</p>
+          <p className="mt-2 text-xs text-text-muted">Your question, recent turns, and bounded public excerpts go to the configured AI provider. Never enter credentials. Answers may be incomplete.</p>
           <p role="status" className="mt-1 text-xs text-success">{message}</p>
         </form>
       </div>

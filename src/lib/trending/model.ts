@@ -12,7 +12,7 @@ export const maxRangeDays = 366;
 
 export function parseTrending(input: Record<string, unknown>, now = new Date()) {
   return z.object({
-    period: z.enum(periods).default(trendingDefaults.period),
+    period: z.preprocess((value) => value === "24h" ? "today" : value === "365d" ? "1y" : value, z.enum(periods).default(trendingDefaults.period)),
     ranking: z.enum(["growth", "stars", "percentage"]).default(trendingDefaults.ranking),
     language: z.string().trim().min(1).max(60).regex(/^[\p{L}\p{N} #+.()_\-]+$/u).default(trendingDefaults.language),
     startDate: z.iso.date().optional(), endDate: z.iso.date().optional(),

@@ -1,5 +1,5 @@
 // Tests must never inherit deployment credentials or spend live service quota.
-for (const key of ["GITHUB_TOKEN", "GITHUB_PERSONAL_ACCESS_TOKEN", "DATABASE_URL", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]) delete process.env[key];
+for (const key of ["GITHUB_TOKEN", "GITHUB_PERSONAL_ACCESS_TOKEN", "DATABASE_URL", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "AI_API_KEY", "CRON_SECRET", "DIAGNOSTICS_SECRET"]) delete process.env[key];
 
 import "@testing-library/jest-dom/vitest";
 import { afterEach, vi } from "vitest";

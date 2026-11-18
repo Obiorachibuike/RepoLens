@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { getDatabase } from "@/lib/db/client";
 import { repositoryAnalyses } from "@/lib/db/schema";
 import { currentUserId } from "@/lib/session";
@@ -9,14 +9,14 @@ import { recommendationSignals, recommendProjects } from "@/lib/discovery/recomm
 import { recommendationProfile } from "@/lib/discovery/filters";
 import { envInt } from "@/lib/infra/config";
 
-export async function recentAnalyses(limit = 8) {
+export async function recentAnalyses(limit = 8, offset = 0) {
   const db = getDatabase();
   if (!db) return null;
   try {
     const user = await currentUserId();
     if (!user) return [];
     return await db.select({ repository: repositoryAnalyses.repository, healthScore: repositoryAnalyses.healthScore, evidenceCoverage: repositoryAnalyses.evidenceCoverage, viewedAt: repositoryAnalyses.viewedAt })
-      .from(repositoryAnalyses).where(and(eq(repositoryAnalyses.userId, user))).orderBy(desc(repositoryAnalyses.viewedAt)).limit(Math.min(50, limit));
+      .from(repositoryAnalyses).where(eq(repositoryAnalyses.userId, user)).orderBy(desc(repositoryAnalyses.viewedAt), asc(repositoryAnalyses.repository)).limit(Math.min(50, limit)).offset(Math.max(0, offset));
   } catch { return null; }
 }
 

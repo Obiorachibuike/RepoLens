@@ -43,8 +43,8 @@ export async function usingRedis<T>(operation: (redis: Redis) => Promise<T>): Pr
   }
 }
 
-export async function checkRedis() {
-  await usingRedis((redis) => redis.ping());
+export async function checkRedis(maxAge = 0) {
+  if (lastOk === null || Date.now() - lastOk >= maxAge) await usingRedis((redis) => redis.ping());
   return redisStatus();
 }
 

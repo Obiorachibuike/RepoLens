@@ -14,3 +14,9 @@
 2. Add PostgreSQL-only tracking, snapshot and job state with bounded admission and resumable cron batches. Trending is an indexed read model, not a live search. Don't seed fake history.
 3. Extend the existing analysis with scored evidence, bounded source retrieval, static reviews, dependencies and a source map. Layer owner-scoped chat on authorized public evidence.
 4. Use the tracked pool and the existing workspace for dashboard, comparison, contribution discovery, recommendations and Watchtower. Build and test migrations and queries against PostgreSQL semantics, then verify deploy configuration without changing production.
+
+## Verification notes for review
+
+- The PostgreSQL read paths are covered by PGlite fixtures. The snapshot collector and every migration were also exercised against a disposable PostgreSQL server with GitHub metadata fetched live. An empty history correctly has no Growth rows even when Most Starred has results. The sample observations are not bundled with the application or deployed to production.
+- Browser checks used desktop and mobile Chromium: default Trending filters and custom dates, keyboard repository lookup, mobile navigation, light theme persistence, Watchtower preference persistence, architecture file links/zoom, comparison, and the visible provider-not-configured state. Provider and advisory behavior is tested with controlled HTTP responses; paid inference and hosted Redis require configured credentials.
+- A production rollout needs operator-managed PostgreSQL migrations, a public-only PAT, and the cron secret before activating collection. Optional Redis and AI keys can be added to their target environments. Existing records and user preferences are not reset.

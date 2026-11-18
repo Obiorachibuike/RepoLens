@@ -1,3 +1,4 @@
+import { redactSource } from "@/lib/intelligence/redact";
 import type { GithubErrorKind } from "./types";
 
 /**
@@ -179,10 +180,10 @@ function extractMessage(body: unknown): string | null {
       const first = errors[0];
       if (first && typeof first === "object") {
         const detail = (first as Record<string, unknown>).message;
-        if (typeof detail === "string") return `${message} (${detail})`;
+        if (typeof detail === "string") return redactSource(`${message} (${detail})`).slice(0, 400);
       }
     }
-    return message;
+    return redactSource(message).slice(0, 400);
   }
   return null;
 }

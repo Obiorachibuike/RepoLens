@@ -166,12 +166,15 @@ export async function githubRequest<T>(options: GithubRequestOptions): Promise<{
   const path = identity.url.pathname;
   const match = path.match(repoPath);
   if (match?.[3] && token) {
-    // Authenticate only public repository subresources, not names the token
-    // happens to have private access to. Do not use stale metadata for this gate.
-    const verified = await githubRequest<{ private?: boolean; visibility?: string }>({ path: `/repos/${match[1]}/${match[2]}`, signal: options.signal });
-    if (verified.meta.freshness === "stale" || isPrivateRepository(verified.data)) {
-      await githubRequest({ path: `/repos/${match[1]}/${match[2]}`, refresh: "validate", signal: options.signal });
+    // Do not grant access to repository subresources based on old visibility
+    // metadata. Use a short proof window, independent of the metadata TTL.
+    const proof = { path: `/repos/${match[1]}/${match[2]}`, signal: options.signal };
+    type Visibility = { private?: boolean; visibility?: string };
+    let verified = await githubRequest<Visibility>(proof);
+    if (verified.meta.freshness === "stale" || Date.now() - Date.parse(verified.meta.observedAt) >= 60_000) {
+      verified = await githubRequest<Visibility>({ ...proof, refresh: "validate" });
     }
+    if (isPrivateRepository(verified.data) || !(verified.data?.private === false || verified.data?.visibility === "public")) throw publicNotFound();
   }
   const seconds = options.cacheSeconds ?? ttl(path);
   const timeout = Math.min(15_000, Math.max(10, options.timeoutMs ?? 8_000));

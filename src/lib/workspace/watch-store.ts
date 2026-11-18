@@ -9,7 +9,7 @@ type RawWatch = Omit<WatchItem, "events" | "unread"> & { snapshots: WatchSnapsho
 export async function listWatchlist(db: Database, userId: string): Promise<WatchItem[]> {
   const data = await db.execute<RawWatch>(sql`
     SELECT w.id, t.owner, t.name, t.repository_url AS url, t.archived, t.tracking_status AS status,
-      t.last_tracked_at::text AS "lastChecked", t.next_check_at::text AS "nextCheck", w.seen_at::text AS "seenAt", w.preferences,
+      t.last_tracked_at::text AS "lastChecked", t.last_watch_probe_at::text AS "lastProbe", t.next_check_at::text AS "nextCheck", w.seen_at::text AS "seenAt", w.preferences,
       COALESCE(observations.items, '[]'::jsonb) AS snapshots
     FROM repository_watchlists w JOIN tracked_repositories t ON t.id = w.tracked_repository_id
     LEFT JOIN LATERAL (
