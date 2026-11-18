@@ -14,7 +14,7 @@ export function createSessionKey(): string {
 export async function readSessionKey(): Promise<string | null> {
   const store = await cookies();
   const value = store.get(SESSION_COOKIE)?.value;
-  if (!value || !/^[0-9a-f-]{8,64}$/i.test(value)) return null;
+  if (!value || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) return null;
   return value;
 }
 

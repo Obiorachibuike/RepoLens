@@ -1,3 +1,4 @@
+import { isAiConfigured } from "@/lib/ai/provider";
 import { NextResponse } from "next/server";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { isGithubAuthenticated } from "@/lib/github/client";
@@ -16,7 +17,7 @@ export async function GET() {
     {
       github: { authenticated: isGithubAuthenticated() },
       database: isDatabaseConfigured(),
-      ai: Boolean(process.env.AI_API_KEY),
+      ai: isAiConfigured(),
       codeSearch: isGithubAuthenticated(),
     },
     { headers: { "Cache-Control": "no-store" } },

@@ -1,3 +1,4 @@
+import { recordAnalysis } from "@/lib/workspace/analysis-history";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -47,6 +48,7 @@ export default async function AnalyzePage({ params }: { params: Promise<Params> 
   }
 
   const analysis = analyzeRepository(evidence);
+  await recordAnalysis(evidence.repository.fullName);
 
   return (
     <div className="pb-16">
@@ -54,6 +56,10 @@ export default async function AnalyzePage({ params }: { params: Promise<Params> 
 
       <div className="mx-auto w-full max-w-[1100px] space-y-4 px-4 pt-5 sm:px-6">
         <Notice tone="info">{analysis.disclaimer}</Notice>
+        <div className="flex flex-wrap gap-2">
+          <Link href={`/repository/${owner}/${repo}/intelligence`} className="rounded-md border border-border bg-accent-soft px-3 py-1.5 text-xs text-accent-hover hover:underline">View health score and intelligence</Link>
+          <Link href={`/repository/${owner}/${repo}/chat`} className="rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-xs hover:underline">Ask AI about this repository</Link>
+        </div>
 
         {evidence.failed.length > 0 ? (
           <Notice tone="warning">

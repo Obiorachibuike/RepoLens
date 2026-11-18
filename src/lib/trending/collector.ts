@@ -9,6 +9,7 @@ import { githubRequest } from "@/lib/github/client";
 import { GithubApiError } from "@/lib/github/errors";
 import { acquireLease } from "@/lib/infra/redis";
 import { enforceBudget } from "@/lib/infra/budget";
+import { getCachedData } from "@/lib/infra/cache";
 import { envInt } from "@/lib/infra/config";
 import { poolSize, registerRepositories, saveObservation, snapshotJob } from "./store";
 
@@ -35,8 +36,10 @@ async function watchSignals(ref: RepoRef, signal: AbortSignal): Promise<WatchSig
   const releases = await request<{ tag_name?: string }[]>("releases", 1);
   const contributors = await request<{ login?: string }[]>("contributors", 12);
   const root = await request<{ name: string; sha: string }[]>("contents");
+  const advisories = head?.[0]?.sha ? await getCachedData<{ revision: string; label: string }>(`watch-advisories:${ref.owner.toLowerCase()}/${ref.repo.toLowerCase()}`) : null;
   return {
     ...(head?.[0]?.sha ? { head: head[0].sha } : {}),
+    ...(advisories && advisories.data.revision === head?.[0]?.sha ? { advisories: advisories.data.label } : {}),
     ...(releases ? { release: releases[0]?.tag_name?.slice(0, 160) ?? "No published releases" } : {}),
     ...(contributors ? { contributorSample: digest(contributors.map((entry) => entry.login ?? "").filter(Boolean).sort().join(",")) } : {}),
     ...(Array.isArray(root) ? { manifestFingerprint: digest(root.filter((item) => /^(package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|requirements\.txt|pyproject\.toml|poetry\.lock|Cargo\.(?:toml|lock)|go\.(?:mod|sum)|Gemfile(?:\.lock)?|pom\.xml|composer\.(?:json|lock))$/.test(item.name)).map((item) => `${item.name}:${item.sha}`).sort().join(",")) } : {}),

@@ -331,11 +331,10 @@ export async function getPreferences(userId: string): Promise<UserPreferences> {
 export async function updatePreferences(userId: string, preferences: Partial<UserPreferences>) {
   const database = db();
   if (!database) return null;
-  const current = await getPreferences(userId);
   const [row] = await database
     .update(users)
-    .set({ preferences: { ...current, ...preferences }, updatedAt: new Date() })
+    .set({ preferences: sql`${users.preferences} || ${JSON.stringify(preferences)}::jsonb`, updatedAt: new Date() })
     .where(eq(users.id, userId))
     .returning({ preferences: users.preferences });
-  return row?.preferences ?? { ...current, ...preferences };
+  return row?.preferences ?? { ...defaultPreferences, ...preferences };
 }

@@ -47,7 +47,7 @@ CREATE TABLE repository_watchlists (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   tracked_repository_id uuid NOT NULL REFERENCES tracked_repositories(id) ON DELETE CASCADE,
-  preferences jsonb NOT NULL DEFAULT '{"stars":true,"issues":true,"releases":true,"commits":true,"contributors":true,"dependencies":true,"archived":true}',
+  preferences jsonb NOT NULL DEFAULT '{"stars":true,"issues":true,"releases":true,"commits":true,"contributors":true,"dependencies":true,"advisories":true,"archived":true}',
   seen_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX repository_watchlists_owner_repo_idx ON repository_watchlists(user_id, tracked_repository_id);

@@ -8,6 +8,11 @@ import pg from "pg";
 const here = dirname(fileURLToPath(import.meta.url));
 const migrationsDir = join(here, "..", "drizzle");
 
+for (const file of [".env.local", ".env"]) {
+  try { process.loadEnvFile?.(file); }
+  catch (error) { if (error.code !== "ENOENT") throw error; }
+}
+
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
   console.error("DATABASE_URL is not set. Add it to .env to run migrations.");
@@ -18,6 +23,7 @@ const client = new pg.Client({ connectionString });
 await client.connect();
 
 try {
+  await client.query("SELECT pg_advisory_lock(248401021)");
   await client.query(`CREATE TABLE IF NOT EXISTS _repolens_migrations (
     id text PRIMARY KEY,
     applied_at timestamptz NOT NULL DEFAULT now()

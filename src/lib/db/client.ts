@@ -2,13 +2,12 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { envInt } from "@/lib/infra/config";
 import * as schema from "./schema";
 
 export type Database = NodePgDatabase<typeof schema>;
 
-let pool: Pool | null = null;
 let database: Database | null = null;
-let connectionFailed = false;
 
 /** True when DATABASE_URL is present, i.e. persistent features are available. */
 export function isDatabaseConfigured(): boolean {
@@ -23,20 +22,22 @@ export function isDatabaseConfigured(): boolean {
 export function getDatabase(): Database | null {
   if (!isDatabaseConfigured()) return null;
   if (database) return database;
-  if (connectionFailed) return null;
 
   try {
-    pool = new Pool({
+    const pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      max: 5,
+      max: envInt("PG_POOL_MAX", 4, 1, 15),
+      allowExitOnIdle: true,
+      statement_timeout: 6000,
+      query_timeout: 8000,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
     });
+    pool.on("error", () => console.warn("[repolens] Idle PostgreSQL connection closed."));
     database = drizzle(pool, { schema });
     return database;
-  } catch (error) {
-    connectionFailed = true;
-    console.error("[repolens] database unavailable:", error instanceof Error ? error.message : error);
+  } catch {
+    console.warn("[repolens] Could not initialize the database pool.");
     return null;
   }
 }
@@ -49,13 +50,11 @@ export async function checkDatabase(): Promise<{ configured: boolean; connected:
   try {
     await db.execute(sql`SELECT 1 AS ok`);
     return { configured: true, connected: true, error: null };
-  } catch (error) {
-    connectionFailed = false; // allow a retry on the next request
-    database = null;
+  } catch {
     return {
       configured: true,
       connected: false,
-      error: error instanceof Error ? error.message : "unknown error",
+      error: "Database connectivity check failed.",
     };
   }
 }

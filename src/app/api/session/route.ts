@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fromError } from "@/lib/api/respond";
 import { SESSION_COOKIE, createSessionKey, readSessionKey, resolveUserId } from "@/lib/session";
 import { isDatabaseConfigured } from "@/lib/db/client";
 
@@ -18,6 +19,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  try {
   const existing = await readSessionKey();
   const key = existing ?? createSessionKey();
   const userId = await resolveUserId(key);
@@ -37,4 +39,5 @@ export async function POST(request: Request) {
   });
 
   return response;
+  } catch (error) { return fromError(error); }
 }

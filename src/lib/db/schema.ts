@@ -6,12 +6,14 @@ import {
   jsonb,
   pgTable,
   primaryKey,
+  serial,
   text,
   timestamp,
   uniqueIndex,
   uuid,
   index,
 } from "drizzle-orm/pg-core";
+import type { RecommendationProfile } from "@/lib/discovery/filters";
 import type { SearchMode, SortOption } from "@/lib/validation/search";
 
 export interface UserPreferences {
@@ -19,6 +21,7 @@ export interface UserPreferences {
   defaultMode: SearchMode;
   defaultSort: SortOption;
   defaultPerPage: number;
+  recommendations?: RecommendationProfile;
 }
 
 export const defaultPreferences: UserPreferences = {
@@ -187,6 +190,7 @@ export interface WatchSignals {
   release?: string;
   contributorSample?: string;
   manifestFingerprint?: string;
+  advisories?: string;
 }
 
 export const repositorySnapshots = pgTable("repository_snapshots", {
@@ -226,9 +230,9 @@ export const scheduledJobLeases = pgTable("scheduled_job_leases", {
 });
 
 export interface WatchPreferences {
-  stars: boolean; issues: boolean; releases: boolean; commits: boolean; contributors: boolean; dependencies: boolean; archived: boolean;
+  stars: boolean; issues: boolean; releases: boolean; commits: boolean; contributors: boolean; dependencies: boolean; advisories: boolean; archived: boolean;
 }
-export const defaultWatchPreferences: WatchPreferences = { stars: true, issues: true, commits: true, releases: true, contributors: true, dependencies: true, archived: true };
+export const defaultWatchPreferences: WatchPreferences = { stars: true, issues: true, commits: true, releases: true, contributors: true, dependencies: true, advisories: true, archived: true };
 export const repositoryWatchlists = pgTable("repository_watchlists", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -237,3 +241,42 @@ export const repositoryWatchlists = pgTable("repository_watchlists", {
   seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex("repository_watchlists_owner_repo_idx").on(t.userId, t.trackedRepositoryId), index("repository_watchlists_repo_idx").on(t.trackedRepositoryId), index("repository_watchlists_owner_created_idx").on(t.userId, t.createdAt)]);
+
+export interface AiCitation { id: string; path: string; from: number; to: number; url: string }
+export const aiConversations = pgTable("ai_conversations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  repository: text("repository").notNull(),
+  title: text("title").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("ai_conversations_user_repo_updated_idx").on(t.userId, t.repository, t.updatedAt)]);
+export const aiMessages = pgTable("ai_messages", {
+  id: serial("id").primaryKey(),
+  conversationId: uuid("conversation_id").notNull().references(() => aiConversations.id, { onDelete: "cascade" }),
+  role: text("role").$type<"user" | "assistant">().notNull(),
+  content: text("content").notNull(),
+  citations: jsonb("citations").$type<AiCitation[]>().notNull().default([]),
+  confidence: text("confidence").$type<"confirmed" | "partial" | "insufficient">(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("ai_messages_conversation_id_idx").on(t.conversationId, t.id)]);
+export const analysisUsage = pgTable("analysis_usage", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(),
+  model: text("model").notNull(),
+  promptVersion: text("prompt_version").notNull(),
+  state: text("state").$type<"pending" | "success" | "failed">().notNull().default("pending"),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  costMicros: integer("cost_micros"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("analysis_usage_created_idx").on(t.createdAt), index("analysis_usage_user_created_idx").on(t.userId, t.createdAt)]);
+export const repositoryAnalyses = pgTable("repository_analyses", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  repository: text("repository").notNull(),
+  healthScore: integer("health_score"),
+  evidenceCoverage: integer("evidence_coverage"),
+  viewedAt: timestamp("viewed_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex("repository_analyses_user_repo_idx").on(t.userId, t.repository), index("repository_analyses_user_viewed_idx").on(t.userId, t.viewedAt)]);

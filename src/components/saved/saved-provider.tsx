@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { ensureSession } from "@/lib/storage/session-client";
 import {
   collectionCounts,
   createLocalCollection,
@@ -100,7 +101,7 @@ export function SavedProvider({
     }
     try {
       // Ensure an anonymous session exists before reading.
-      await api("/api/session", { method: "POST" });
+      if (!await ensureSession()) throw new ApiFailure("Could not start a workspace session.", 503);
       const saved = (await api("/api/saved")) as { items?: Record<string, unknown>[] };
       const collectionResponse = (await api("/api/collections")) as { items?: Record<string, unknown>[] };
       setItems((saved.items ?? []).map(fromServerRow));
