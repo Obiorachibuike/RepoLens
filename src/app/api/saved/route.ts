@@ -1,3 +1,8 @@
+import { after } from "next/server";
+import { githubRepoUrl, repoRefSchema } from "@/lib/validation/repository";
+import { enforceBudget } from "@/lib/infra/budget";
+import { getRepository } from "@/lib/github/repos";
+import { trackBestEffort } from "@/lib/trending/store";
 import { z } from "zod";
 import { fromError, ok, persistenceUnavailable, sessionRequired } from "@/lib/api/respond";
 import { isDatabaseConfigured } from "@/lib/db/client";
@@ -47,8 +52,20 @@ export async function POST(request: Request) {
       );
     }
 
-    const row = await saveRepository(userId, parsed.data);
+    const ref = repoRefSchema.safeParse({ owner: parsed.data.owner, repo: parsed.data.name });
+    if (!ref.success || parsed.data.fullName.toLowerCase() !== `${parsed.data.owner}/${parsed.data.name}`.toLowerCase()) {
+      return Response.json({ error: { kind: "validation", message: "Enter a valid GitHub repository." } }, { status: 400 });
+    }
+    const row = await saveRepository(userId, { ...parsed.data, url: githubRepoUrl(ref.data) });
     if (!row) return persistenceUnavailable("saved-repositories", "Saved repositories are");
+    after(async () => {
+      try {
+        await enforceBudget("refresh", userId);
+        await enforceBudget("analysis");
+        const repository = await getRepository(ref.data);
+        if (!repository.stale && repository.hasSnapshotCounts) await trackBestEffort([repository.data], "save");
+      } catch { /* Saving works whether or not the repository can be tracked. */ }
+    });
     return ok({ item: row }, { status: 201 });
   } catch (error) {
     return fromError(error);

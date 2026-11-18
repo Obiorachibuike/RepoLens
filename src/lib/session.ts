@@ -35,8 +35,11 @@ export async function resolveUserId(sessionKey: string | null): Promise<string |
   const inserted = await db
     .insert(users)
     .values({ anonymousKey: sessionKey })
+    .onConflictDoNothing({ target: users.anonymousKey })
     .returning({ id: users.id });
-  return inserted[0]?.id ?? null;
+  if (inserted[0]) return inserted[0].id;
+  const [winner] = await db.select({ id: users.id }).from(users).where(eq(users.anonymousKey, sessionKey)).limit(1);
+  return winner?.id ?? null;
 }
 
 /** Convenience helper for route handlers. */

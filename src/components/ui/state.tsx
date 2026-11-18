@@ -6,11 +6,13 @@ import { cn } from "@/lib/utils";
 export function EmptyState({
   title = "No repositories found",
   description = "Try a different keyword or adjust your filters.",
+  icon = <SearchX className="size-5" />,
   action,
   className,
 }: {
   title?: string;
   description?: string;
+  icon?: React.ReactNode;
   action?: React.ReactNode;
   className?: string;
 }) {
@@ -22,7 +24,7 @@ export function EmptyState({
       )}
     >
       <span className="rounded-full border border-border bg-surface-elevated p-3 text-text-muted">
-        <SearchX className="size-5" />
+        {icon}
       </span>
       <div>
         <p className="text-sm font-medium text-text-primary">{title}</p>

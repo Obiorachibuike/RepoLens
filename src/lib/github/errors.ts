@@ -56,6 +56,20 @@ function humanReset(iso: string | null): string {
   return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 }
 
+export function resetIso(headers: Headers): string | null {
+  const raw = headers.get("x-ratelimit-reset");
+  const value = raw && /^\d{1,12}$/.test(raw) ? new Date(Number(raw) * 1000) : null;
+  return value && Number.isFinite(value.getTime()) ? value.toISOString() : null;
+}
+
+export function retryAfterSeconds(headers: Headers): number | null {
+  const raw = headers.get("retry-after");
+  if (!raw) return null;
+  if (/^\d{1,9}$/.test(raw)) return Number(raw);
+  const time = Date.parse(raw);
+  return Number.isFinite(time) ? Math.max(0, Math.ceil((time - Date.now()) / 1000)) : null;
+}
+
 /** Translate an HTTP response from api.github.com into a GithubApiError. */
 export function errorFromResponse(options: {
   status: number;
@@ -66,21 +80,19 @@ export function errorFromResponse(options: {
   requiresAuth?: boolean;
 }): GithubApiError {
   const { status, headers, authenticated } = options;
-  const retryAfterHeader = headers.get("retry-after");
-  const retryAfterSeconds = retryAfterHeader ? Number(retryAfterHeader) : null;
+  const retryAfter = retryAfterSeconds(headers);
   const remaining = headers.get("x-ratelimit-remaining");
-  const resetHeader = headers.get("x-ratelimit-reset");
-  const resetAt = resetHeader ? new Date(Number(resetHeader) * 1000).toISOString() : null;
+  const resetAt = resetIso(headers);
   const message = extractMessage(options.body);
 
   // Secondary rate limits arrive as 403 with a Retry-After header.
-  if (status === 403 && retryAfterSeconds && retryAfterSeconds > 0) {
+  if (status === 403 && remaining !== "0" && (retryAfter !== null || /secondary rate limit|abuse detection/i.test(message ?? ""))) {
     return new GithubApiError({
       kind: "rate_limited",
       status,
-      retryAfterSeconds,
+      retryAfterSeconds: retryAfter,
       resetAt,
-      message: `GitHub asked us to slow down. Try again in about ${retryAfterSeconds} seconds.`,
+      message: retryAfter ? `GitHub asked us to slow down. Try again in about ${retryAfter} seconds.` : "GitHub asked us to slow down. Please wait before trying again.",
       hint: "Secondary rate limits are temporary — waiting is the only fix.",
     });
   }
@@ -90,10 +102,10 @@ export function errorFromResponse(options: {
       kind: "rate_limited",
       status,
       resetAt,
-      retryAfterSeconds: secondsUntil(resetAt),
+      retryAfterSeconds: Math.max(secondsUntil(resetAt) ?? 0, retryAfter ?? 0),
       message: `GitHub's ${authenticated ? "authenticated" : "unauthenticated"} request limit has been reached. It resets at ${humanReset(resetAt)}.`,
       hint: authenticated
-        ? "Set GITHUB_TOKEN to a token with more quota, or wait for the reset."
+        ? "The application token has a shared quota. Wait for the reset."
         : "Set the optional GITHUB_TOKEN environment variable to raise the limit from 60 to 5,000 requests per hour.",
     });
   }
@@ -102,10 +114,10 @@ export function errorFromResponse(options: {
     return new GithubApiError({
       kind: "rate_limited",
       status,
-      retryAfterSeconds,
+      retryAfterSeconds: retryAfter,
       resetAt,
-      message: retryAfterSeconds
-        ? `GitHub is rate limiting requests. Try again in about ${retryAfterSeconds} seconds.`
+      message: retryAfter
+        ? `GitHub is rate limiting requests. Try again in about ${retryAfter} seconds.`
         : "GitHub is rate limiting requests. Please wait before trying again.",
     });
   }
@@ -113,11 +125,11 @@ export function errorFromResponse(options: {
   switch (status) {
     case 401:
       return new GithubApiError({
-        kind: options.requiresAuth && !authenticated ? "unauthorized" : "unauthorized",
+        kind: "unauthorized",
         status,
-        message: options.requiresAuth
-          ? "This GitHub endpoint requires authentication. Set the optional GITHUB_TOKEN server environment variable to enable it."
-          : "GitHub rejected the configured token. Check that GITHUB_TOKEN is valid.",
+        message: authenticated
+          ? "GitHub rejected the configured credential. Check that the server token is valid."
+          : "This GitHub endpoint requires authentication. Set GITHUB_TOKEN on the server.",
         hint: "Public repository search works without a token; code search does not.",
       });
     case 403:

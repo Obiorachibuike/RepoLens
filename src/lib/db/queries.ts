@@ -1,5 +1,6 @@
 import "server-only";
 import { and, desc, eq, sql } from "drizzle-orm";
+import { GithubApiError } from "@/lib/github/errors";
 import { getDatabase } from "./client";
 import {
   collectionRepositories,
@@ -54,6 +55,7 @@ export async function listSaved(userId: string) {
 export async function saveRepository(userId: string, input: SaveRepositoryInput) {
   const database = db();
   if (!database) return null;
+  await assertOwnedCollection(userId, input.collectionId);
   const [row] = await database
     .insert(savedRepositories)
     .values({
@@ -99,12 +101,19 @@ export async function updateSaved(
 ) {
   const database = db();
   if (!database) return null;
+  await assertOwnedCollection(userId, patch.collectionId);
   const [row] = await database
     .update(savedRepositories)
     .set(patch)
     .where(and(eq(savedRepositories.id, id), eq(savedRepositories.userId, userId)))
     .returning();
   return row ?? null;
+}
+
+async function assertOwnedCollection(userId: string, id?: string | null) {
+  if (!id) return;
+  const [row] = await db()!.select({ id: collections.id }).from(collections).where(and(eq(collections.id, id), eq(collections.userId, userId))).limit(1);
+  if (!row) throw new GithubApiError({ kind: "not_found", message: "Collection not found." });
 }
 
 /* ------------------------------- Collections ----------------------------- */

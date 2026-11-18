@@ -234,3 +234,66 @@ describe("token handling", () => {
     expect(getGithubToken()).toBe(TOKEN);
   });
 });
+
+describe("shared-safe cache and validators", () => {
+  it("uses GitHub's ETag and Last-Modified and retains the body on a 304", async () => {
+    let call = 0;
+    const spy = mockFetch(async () => ++call === 1
+      ? jsonResponse(200, { stars: 5 }, { etag: '"tag"', "last-modified": "Wed, 18 Nov 2026 00:00:00 GMT" })
+      : new Response(null, { status: 304 }));
+    const options = { path: "/repos/a/b" } as const;
+    await githubRequest(options);
+    await new Promise((resolve) => setTimeout(resolve, 3));
+    const result = await githubRequest({ ...options, refresh: "validate" });
+    expect(spy.mock.calls[1]?.[1]?.headers).toMatchObject({ "If-None-Match": '"tag"', "If-Modified-Since": "Wed, 18 Nov 2026 00:00:00 GMT" });
+    expect(result).toMatchObject({ data: { stars: 5 }, meta: { status: 304, freshness: "validated" } });
+    expect((await githubRequest(options)).meta.freshness).toBe("fresh");
+  });
+  it("isolates credential scopes and representations and supports invalidation", async () => {
+    let n = 0;
+    const spy = mockFetch(async () => jsonResponse(200, { n: ++n }));
+    const options = { path: "/rate_limit" } as const;
+    await githubRequest(options);
+    process.env.GITHUB_TOKEN = TOKEN;
+    expect((await githubRequest(options)).data).toEqual({ n: 2 });
+    await githubRequest({ ...options, responseType: "text" });
+    await githubRequest(options);
+    const { invalidateGithubCache } = await import("./client");
+    await invalidateGithubCache(options);
+    expect((await githubRequest(options)).data).toEqual({ n: 4 });
+    expect(spy).toHaveBeenCalledTimes(4);
+  });
+  it("rejects absolute and encoded traversal paths without a network request", async () => {
+    const spy = mockFetch(async () => jsonResponse(200, {}));
+    for (const path of ["http://example.invalid/x", "//example.invalid", "/repos/a/b/contents/%2e%2e/x", "/repos/a/b/contents/%2fetc"]) {
+      await expect(githubRequest({ path })).rejects.toMatchObject({ kind: "validation" });
+    }
+    expect(spy).not.toHaveBeenCalled();
+  });
+  it("checks repository privacy before an authenticated subresource lookup", async () => {
+    process.env.GITHUB_TOKEN = TOKEN;
+    const spy = mockFetch(async () => jsonResponse(200, { private: true, visibility: "private", name: "hidden" }));
+    await expect(githubRequest({ path: "/repos/a/b/readme" })).rejects.toMatchObject({ kind: "not_found" });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy.mock.calls[0]?.[0]).toBe("https://api.github.com/repos/a/b");
+  });
+  it("backs off on unlabelled secondary Retry-After and sends no aggressive retry", async () => {
+    const spy = mockFetch(async () => jsonResponse(403, { message: "You have exceeded a secondary rate limit" }));
+    await expect(githubRequest({ path: "/search/repositories" })).rejects.toMatchObject({ kind: "rate_limited", retryAfterSeconds: 60 });
+    await expect(githubRequest({ path: "/repos/a/b" })).rejects.toMatchObject({ kind: "rate_limited" });
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+  it("continues with a bounded local cache when Redis cannot connect", async () => {
+    vi.stubEnv("UPSTASH_REDIS_REST_URL", "https://redis.invalid");
+    vi.stubEnv("UPSTASH_REDIS_REST_TOKEN", "mock-redis-token");
+    try {
+      const spy = mockFetch(async (url) => {
+        if (url.startsWith("https://redis.invalid")) throw new TypeError("simulated outage");
+        return jsonResponse(200, { ok: true });
+      });
+      await githubRequest({ path: "/rate_limit" });
+      expect((await githubRequest({ path: "/rate_limit" })).meta.fromCache).toBe(true);
+      expect(spy.mock.calls.filter(([url]) => String(url).startsWith("https://api.github.com"))).toHaveLength(1);
+    } finally { vi.unstubAllEnvs(); }
+  });
+});

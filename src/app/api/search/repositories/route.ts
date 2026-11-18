@@ -1,3 +1,5 @@
+import { isDatabaseConfigured } from "@/lib/db/client";
+import { trackBestEffort } from "@/lib/trending/store";
 import { fromError, ok, searchParamsToRecord, validationError } from "@/lib/api/respond";
 import { searchRepositories } from "@/lib/github/search";
 import { buildRepositoryQuery } from "@/lib/query/build";
@@ -89,13 +91,13 @@ export async function GET(request: Request) {
 
     // Persist history for the first page of a real search (no-op without a DB).
     if (page === 1) {
-      await recordHistory({
+      await Promise.all([trackBestEffort(result.items.slice(0, 4), "search"), recordHistory({
         query: q,
         mode,
         sort,
         filters,
         resultCount: result.totalCount,
-      });
+      })]);
     }
 
     return ok({
@@ -138,6 +140,7 @@ async function recordHistory(entry: {
   filters: RepositoryFilters;
   resultCount: number;
 }): Promise<void> {
+  if (!isDatabaseConfigured()) return;
   try {
     const userId = await currentUserId();
     if (!userId) return;
@@ -157,8 +160,8 @@ async function recordHistory(entry: {
       filters,
       resultCount: entry.resultCount,
     });
-  } catch (error) {
+  } catch {
     // History is a convenience — never fail a search because of it.
-    console.error("[repolens] history write failed:", error instanceof Error ? error.message : error);
+    console.warn("[repolens] search history write failed");
   }
 }
