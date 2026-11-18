@@ -1,3 +1,4 @@
+import { trackBestEffort } from "@/lib/trending/store";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -39,6 +40,7 @@ export default async function RepositoryDetailPage({ params }: { params: Promise
   try {
     const result = await getRepository({ owner, repo });
     repository = result.data;
+    if (!result.stale && result.hasSnapshotCounts) await trackBestEffort([repository], "detail");
   } catch (error) {
     if (error instanceof GithubApiError && error.kind === "not_found") notFound();
     throw error;

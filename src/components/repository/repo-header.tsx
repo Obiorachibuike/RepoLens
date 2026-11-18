@@ -11,6 +11,9 @@ import {
   Eye,
   GitFork,
   HardDrive,
+  BrainCircuit,
+  MessageSquareText,
+  Radio,
   ScanSearch,
   Scale,
   Star,
@@ -25,12 +28,14 @@ import { formatDate, formatExact, timeAgo } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { useSaved } from "@/components/saved/saved-provider";
 
-export type RepoTab = "details" | "visualize" | "analyze";
+export type RepoTab = "details" | "visualize" | "analyze" | "intelligence" | "chat";
 
 const TABS: Array<{ id: RepoTab; label: string; icon: typeof Eye }> = [
   { id: "details", label: "Details", icon: Eye },
   { id: "visualize", label: "Visualize", icon: BarChart3 },
   { id: "analyze", label: "Analyze", icon: ScanSearch },
+  { id: "intelligence", label: "Intelligence", icon: BrainCircuit },
+  { id: "chat", label: "AI chat", icon: MessageSquareText },
 ];
 
 export function RepoHeader({
@@ -225,6 +230,7 @@ export function RepoHeader({
             );
           })}
         </nav>
+        <Link href={`/watchlist?repository=${encodeURIComponent(repository.fullName)}`} className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-text-muted hover:text-accent-hover"><Radio className="size-3.5" /> Watch this repository</Link>
       </div>
     </header>
   );

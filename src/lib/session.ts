@@ -14,29 +14,33 @@ export function createSessionKey(): string {
 export async function readSessionKey(): Promise<string | null> {
   const store = await cookies();
   const value = store.get(SESSION_COOKIE)?.value;
-  if (!value || !/^[0-9a-f-]{8,64}$/i.test(value)) return null;
+  if (!value || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) return null;
   return value;
 }
 
 /**
- * Maps a session key to a user row, creating one on first use.
+ * Maps an existing session key to a user row. Only the session bootstrap
+ * creates a session; unrelated route reads never write a new user.
  * Returns null when PostgreSQL is not configured (callers fall back to
  * browser-local storage) — never throws for missing infrastructure.
  */
-export async function resolveUserId(sessionKey: string | null): Promise<string | null> {
+export async function resolveUserId(sessionKey: string | null, create = false): Promise<string | null> {
   if (!sessionKey) return null;
   const db = getDatabase();
   if (!db) return null;
 
   const existing = await db.select({ id: users.id }).from(users).where(eq(users.anonymousKey, sessionKey)).limit(1);
   const found = existing[0];
-  if (found) return found.id;
+  if (found || !create) return found?.id ?? null;
 
   const inserted = await db
     .insert(users)
     .values({ anonymousKey: sessionKey })
+    .onConflictDoNothing({ target: users.anonymousKey })
     .returning({ id: users.id });
-  return inserted[0]?.id ?? null;
+  if (inserted[0]) return inserted[0].id;
+  const [winner] = await db.select({ id: users.id }).from(users).where(eq(users.anonymousKey, sessionKey)).limit(1);
+  return winner?.id ?? null;
 }
 
 /** Convenience helper for route handlers. */

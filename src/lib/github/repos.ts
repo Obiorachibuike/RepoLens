@@ -1,5 +1,8 @@
 import "server-only";
 import { githubRequest } from "./client";
+import { redactSource } from "@/lib/intelligence/redact";
+import { repoRefSchema, repoFilePath, type RepoRef } from "@/lib/validation/repository";
+export type { RepoRef } from "@/lib/validation/repository";
 import { GithubApiError } from "./errors";
 import {
   mapCommits,
@@ -18,34 +21,33 @@ import type {
   TreeEntry,
 } from "./types";
 
-export interface RepoRef {
-  owner: string;
-  repo: string;
+export function assertRef(ref: RepoRef): void {
+  if (!repoRefSchema.safeParse(ref).success) {
+    throw new GithubApiError({ kind: "validation", status: 422, message: "That does not look like a valid GitHub owner/repository path." });
+  }
 }
 
-function assertRef({ owner, repo }: RepoRef): void {
-  const valid = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,99})$/;
-  if (!valid.test(owner) || !valid.test(repo)) {
-    throw new GithubApiError({
-      kind: "validation",
-      status: 422,
-      message: "That does not look like a valid GitHub owner/repository path.",
-    });
-  }
+export function encodeRepoPath(path: string) {
+  if (!repoFilePath.safeParse(path).success) throw new GithubApiError({ kind: "validation", message: "Invalid repository file path." });
+  return path.split("/").map(encodeURIComponent).join("/");
 }
 
 /** GET /repos/{owner}/{repo} */
 export async function getRepository(
   ref: RepoRef,
   signal?: AbortSignal,
-): Promise<{ data: RepositoryDetail; rateLimit: RateLimitInfo | null }> {
+  refresh?: "validate",
+): Promise<{ data: RepositoryDetail; rateLimit: RateLimitInfo | null; observedAt: string; stale: boolean; hasSnapshotCounts: boolean }> {
   assertRef(ref);
   const { data, meta } = await githubRequest<RawRepository>({
     path: `/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}`,
-    cacheSeconds: 60,
-    signal,
+
+    signal, refresh,
   });
-  return { data: mapRepositoryDetail(data), rateLimit: meta.rateLimit };
+  return {
+    data: mapRepositoryDetail(data), rateLimit: meta.rateLimit, observedAt: meta.observedAt, stale: meta.freshness === "stale",
+    hasSnapshotCounts: [data.stargazers_count, data.forks_count, data.open_issues_count].every((count) => typeof count === "number" && Number.isSafeInteger(count) && count >= 0),
+  };
 }
 
 export interface ReadmeResult {
@@ -66,13 +68,13 @@ export async function getReadme(ref: RepoRef, signal?: AbortSignal): Promise<Rea
       path: `/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/readme`,
       accept: "application/vnd.github.raw+json",
       responseType: "text",
-      cacheSeconds: 300,
+
       signal,
     });
     const content = typeof data === "string" ? data : "";
     const tooBig = content.length > MAX_README_BYTES;
     return {
-      content: tooBig ? content.slice(0, MAX_README_BYTES) : content,
+      content: redactSource(tooBig ? content.slice(0, MAX_README_BYTES) : content),
       missing: false,
       truncated: tooBig,
       bytes: content.length,
@@ -93,7 +95,7 @@ export async function getLanguages(
   assertRef(ref);
   const { data, meta } = await githubRequest<Record<string, number>>({
     path: `/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/languages`,
-    cacheSeconds: 300,
+
     signal,
   });
   return { data: mapLanguages(data), rateLimit: meta.rateLimit };
@@ -110,7 +112,7 @@ export async function getContributors(
     const { data, meta } = await githubRequest<unknown>({
       path: `/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/contributors`,
       query: { per_page: Math.min(100, Math.max(1, perPage)) },
-      cacheSeconds: 300,
+
       signal,
     });
     return { data: mapContributors(data), rateLimit: meta.rateLimit };
@@ -134,7 +136,7 @@ export async function getCommits(
     const { data, meta } = await githubRequest<unknown>({
       path: `/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/commits`,
       query: { per_page: Math.min(100, Math.max(1, perPage)) },
-      cacheSeconds: 120,
+
       signal,
     });
     return { data: mapCommits(data), rateLimit: meta.rateLimit };
@@ -154,14 +156,14 @@ export async function getContents(
   signal?: AbortSignal,
 ): Promise<{ data: TreeEntry[]; rateLimit: RateLimitInfo | null }> {
   assertRef(ref);
-  const safePath = path.replace(/^\/+|\/+$/g, "").split("/").map(encodeURIComponent).join("/");
+  const safePath = path ? encodeRepoPath(path) : "";
   try {
     const { data, meta } = await githubRequest<unknown>({
       path: `/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/contents${
         safePath ? `/${safePath}` : ""
       }`,
       query: safePath ? undefined : { ref: undefined },
-      cacheSeconds: 300,
+
       signal,
     });
     if (!Array.isArray(data)) {
@@ -191,7 +193,7 @@ export async function getCommunityProfile(
   try {
     const { data } = await githubRequest<Record<string, unknown>>({
       path: `/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/community/profile`,
-      cacheSeconds: 300,
+
       signal,
     });
     return {
@@ -220,7 +222,7 @@ export async function getLatestRelease(
   try {
     const { data } = await githubRequest<Record<string, unknown>>({
       path: `/repos/${encodeURIComponent(ref.owner)}/${encodeURIComponent(ref.repo)}/releases/latest`,
-      cacheSeconds: 300,
+
       signal,
     });
     return {

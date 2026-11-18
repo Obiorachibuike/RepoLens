@@ -328,3 +328,19 @@
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Overview visual language: quiet grid and a repository-source mark. */
+.overview-hero {
+  background: linear-gradient(112deg, var(--surface) 12%, color-mix(in srgb, var(--surface) 83%, var(--accent)) 100%);
+}
+.hero-grid {
+  background-image: linear-gradient(to right, color-mix(in srgb, var(--accent) 21%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--accent) 21%, transparent) 1px, transparent 1px);
+  background-size: 27px 27px;
+  mask-image: radial-gradient(ellipse at 68% 54%, black 7%, transparent 77%);
+}
+.hero-highlight { color: #c3b8ff; }
+.light .hero-highlight { color: #5248bd; }
+@media (min-width: 640px) and (max-width: 1079px) {
+  .hero-art { opacity: .47; }
+}

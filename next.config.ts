@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
+const arenaPreview = process.env.ARENA_PREVIEW === "1";
 const nextConfig: NextConfig = {
+  ...(arenaPreview ? { allowedDevOrigins: ["*.e2b.app"] } : {}),
   reactStrictMode: true,
   poweredByHeader: false,
   // Remote images (GitHub avatars) are rendered with plain <img> elements so the
@@ -16,7 +18,7 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
-          { key: "X-Frame-Options", value: "DENY" },
+          ...(arenaPreview ? [] : [{ key: "X-Frame-Options", value: "DENY" }]),
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
       },

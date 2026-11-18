@@ -1,5 +1,5 @@
 import "server-only";
-import { githubRequest } from "./client";
+import { getGithubToken, githubRequest } from "./client";
 import { GithubApiError } from "./errors";
 import {
   mapCodeSearchItem,
@@ -32,7 +32,7 @@ interface SearchRepositoryParams {
   direction?: SortDirection;
   page?: number;
   perPage?: number;
-  /** Short in-memory cache (seconds) for curated/discovery listings. */
+  /** Override the shared cache TTL (seconds) for curated/discovery listings. */
   cacheSeconds?: number;
   signal?: AbortSignal;
 }
@@ -57,7 +57,7 @@ function sortToGithub(sort: SortOption = "best-match"): string | undefined {
 export async function searchRepositories(
   params: SearchRepositoryParams,
 ): Promise<RepositorySearchResult> {
-  const { query, sort = "best-match", direction = "desc", page = 1, perPage = 20, cacheSeconds = 0, signal } = params;
+  const { query, sort = "best-match", direction = "desc", page = 1, perPage = 20, cacheSeconds, signal } = params;
   if (!query.trim()) {
     throw new GithubApiError({ kind: "validation", message: "A search query is required." });
   }
@@ -71,7 +71,7 @@ export async function searchRepositories(
     resource: "search",
     cacheSeconds,
     query: {
-      q: query,
+      q: publicQuery(query),
       sort: sortToGithub(sort),
       order: sort === "best-match" ? undefined : direction,
       page,
@@ -166,7 +166,6 @@ export async function searchDevelopers(
       try {
         const { data: profile } = await githubRequest<Record<string, unknown>>({
           path: `/users/${encodeURIComponent(developer.login)}`,
-          cacheSeconds: 300,
           signal,
         });
         return mapDeveloper(profile, developer.searchScore);
@@ -227,7 +226,7 @@ export async function searchCode(params: SearchCodeParams): Promise<CodeSearchRe
     resource: "search",
     requiresAuth: true,
     accept: "application/vnd.github.text-match+json",
-    query: { q: query, page, per_page: perPage },
+    query: { q: publicQuery(query), page, per_page: perPage },
     signal,
   });
 
@@ -239,4 +238,12 @@ export async function searchCode(params: SearchCodeParams): Promise<CodeSearchRe
     query,
     rateLimit: meta.rateLimit,
   };
+}
+
+/** Shared-token search never queries private/internal repositories. */
+export function publicQuery(query: string) {
+  if (/(?:^|\s)-?(?:is|visibility):(?:private|internal)(?:\s|$)/i.test(query) || /(?:^|\s)-(?:is|visibility):public(?:\s|$)/i.test(query)) {
+    throw new GithubApiError({ kind: "validation", message: "RepoLens only searches public repositories." });
+  }
+  return getGithubToken() && !/(?:^|\s)is:public(?:\s|$)/i.test(query) ? `${query} is:public` : query;
 }

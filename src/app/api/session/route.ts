@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fromError } from "@/lib/api/respond";
 import { SESSION_COOKIE, createSessionKey, readSessionKey, resolveUserId } from "@/lib/session";
 import { isDatabaseConfigured } from "@/lib/db/client";
 
@@ -10,31 +11,33 @@ export const dynamic = "force-dynamic";
  * scope saved repositories, collections and history when PostgreSQL is set up.
  */
 export async function GET() {
-  const key = await readSessionKey();
-  return NextResponse.json({
-    configured: isDatabaseConfigured(),
-    hasSession: Boolean(key),
-  });
+  try {
+    const key = await readSessionKey();
+    return NextResponse.json({ configured: isDatabaseConfigured(), hasSession: Boolean(await resolveUserId(key)) }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) { return fromError(error); }
 }
 
 export async function POST(request: Request) {
-  const existing = await readSessionKey();
-  const key = existing ?? createSessionKey();
-  const userId = await resolveUserId(key);
-  const secure = new URL(request.url).protocol === "https:";
+  try {
+    const existing = await readSessionKey();
+    let userId = await resolveUserId(existing);
+    const key = existing && userId ? existing : createSessionKey();
+    userId ??= await resolveUserId(key, true);
+    const secure = new URL(request.url).protocol === "https:";
 
-  const response = NextResponse.json({
-    configured: isDatabaseConfigured(),
-    hasSession: Boolean(userId),
-  });
+    const response = NextResponse.json({
+      configured: isDatabaseConfigured(),
+      hasSession: Boolean(userId),
+    }, { headers: { "Cache-Control": "no-store" } });
 
-  response.cookies.set(SESSION_COOKIE, key, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure,
-    path: "/",
-    maxAge: 60 * 60 * 24 * 365,
-  });
+    response.cookies.set(SESSION_COOKIE, key, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure,
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+    });
 
-  return response;
+    return response;
+  } catch (error) { return fromError(error); }
 }

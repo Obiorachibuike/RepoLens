@@ -1,3 +1,4 @@
+import { redactLine, redactSource } from "@/lib/intelligence/redact";
 import type {
   CodeSearchItem,
   CommitSummary,
@@ -223,15 +224,15 @@ export function mapCodeSearchItem(raw: Record<string, unknown>, index: number): 
   const matches = Array.isArray(raw.text_matches) ? raw.text_matches : [];
   return {
     id: typeof raw.sha === "string" ? raw.sha : `code-${index}`,
-    name: typeof raw.name === "string" ? raw.name : "file",
-    path: typeof raw.path === "string" ? raw.path : "",
+    name: typeof raw.name === "string" ? redactLine(raw.name) : "file",
+    path: typeof raw.path === "string" ? redactLine(raw.path) : "",
     sha: typeof raw.sha === "string" ? raw.sha : "",
-    htmlUrl: typeof raw.html_url === "string" ? raw.html_url : "",
+    htmlUrl: typeof raw.html_url === "string" && redactLine(raw.html_url) === raw.html_url ? raw.html_url : "",
     repository: repo ? mapRepositorySummary(repo) : null,
     textMatches: matches
       .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === "object")
       .map((entry) => {
-        const fragment = typeof entry.fragment === "string" ? entry.fragment : null;
+        const fragment = typeof entry.fragment === "string" ? redactSource(entry.fragment) : null;
         const repo2 = entry.repository as Record<string, unknown> | undefined;
         return {
           repository:
@@ -240,7 +241,7 @@ export function mapCodeSearchItem(raw: Record<string, unknown>, index: number): 
               : typeof entry.object_url === "string"
                 ? entry.object_url
                 : null,
-          path: typeof entry.path === "string" ? entry.path : null,
+          path: typeof entry.path === "string" ? redactLine(entry.path) : null,
           fragment,
           language: typeof entry.language === "string" ? entry.language : null,
           htmlUrl: typeof entry.html_url === "string" ? entry.html_url : null,

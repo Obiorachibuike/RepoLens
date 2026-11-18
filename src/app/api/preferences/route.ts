@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { recommendationProfile } from "@/lib/discovery/filters";
 import { fromError, ok, persistenceUnavailable, sessionRequired } from "@/lib/api/respond";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { getPreferences, updatePreferences } from "@/lib/db/queries";
@@ -8,6 +9,7 @@ import { PER_PAGE_OPTIONS, SEARCH_MODES, SORT_OPTIONS } from "@/lib/validation/s
 export const dynamic = "force-dynamic";
 
 const preferencesSchema = z.object({
+  recommendations: recommendationProfile.optional(),
   theme: z.enum(["dark", "light", "system"]).optional(),
   defaultMode: z.enum(SEARCH_MODES).optional(),
   defaultSort: z.enum(SORT_OPTIONS).optional(),
@@ -46,3 +48,5 @@ export async function PATCH(request: Request) {
     return fromError(error);
   }
 }
+
+export const PUT = PATCH;

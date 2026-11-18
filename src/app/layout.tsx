@@ -1,7 +1,8 @@
+import { isAiConfigured } from "@/lib/ai/provider";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AppProviders, type AppConfig } from "@/components/app-providers";
-import { Header } from "@/components/header";
+import { Header, Sidebar } from "@/components/header";
 import { isDatabaseConfigured } from "@/lib/db/client";
 import { isGithubAuthenticated } from "@/lib/github/client";
 import { Logo } from "@/components/logo";
@@ -10,7 +11,7 @@ import Link from "next/link";
 export const metadata: Metadata = {
   metadataBase: new URL("https://repolens.dev"),
   title: {
-    default: "RepoLens — Find Your Next Project",
+    default: "RepoLens — Understand Any Codebase",
     template: "%s · RepoLens",
   },
   description:
@@ -24,7 +25,7 @@ export const metadata: Metadata = {
     "code exploration",
   ],
   openGraph: {
-    title: "RepoLens — Find Your Next Project",
+    title: "RepoLens — Understand Any Codebase",
     description:
       "Discover, inspect, visualize and analyze open-source repositories using the official GitHub API.",
     type: "website",
@@ -50,7 +51,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const config: AppConfig = {
     github: { authenticated: githubAuthenticated },
     database: isDatabaseConfigured(),
-    ai: Boolean(process.env.AI_API_KEY),
+    ai: isAiConfigured(),
     codeSearch: githubAuthenticated,
   };
 
@@ -61,10 +62,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-dvh bg-background text-text-primary antialiased">
         <AppProviders config={config}>
-          <div className="relative z-10 flex min-h-dvh flex-col">
-            <Header />
-            <main className="flex-1">{children}</main>
-            <Footer githubAuthenticated={githubAuthenticated} database={config.database} />
+          <div className="relative z-10 flex min-h-dvh items-start">
+            <Sidebar />
+            <div className="flex min-h-dvh min-w-0 flex-1 flex-col">
+              <Header />
+              <main id="main-content" className="min-w-0 flex-1">{children}</main>
+              <Footer githubAuthenticated={githubAuthenticated} database={config.database} />
+            </div>
           </div>
         </AppProviders>
       </body>
@@ -105,8 +109,8 @@ function Footer({ githubAuthenticated, database }: { githubAuthenticated: boolea
             Settings
           </Link>
           <span className="text-text-muted">
-            {githubAuthenticated ? "GitHub token active" : "Unauthenticated (60 req/h)"} ·{" "}
-            {database ? "Database connected" : "Local storage"}
+            {githubAuthenticated ? "GitHub token configured" : "Unauthenticated (60 req/h)"} ·{" "}
+            {database ? "Database configured" : "Local storage"}
           </span>
         </div>
       </div>

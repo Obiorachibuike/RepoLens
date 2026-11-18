@@ -1,3 +1,4 @@
+import { recordAnalysis } from "@/lib/workspace/analysis-history";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -7,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/state";
 import { RepoHeader } from "@/components/repository/repo-header";
 import { GithubApiError } from "@/lib/github/errors";
+import { enforceBudget } from "@/lib/infra/budget";
 import { collectEvidence } from "@/lib/analyze/collect";
 import { analyzeRepository, type Finding } from "@/lib/analyze/analyze";
 import { formatDateTime } from "@/lib/utils";
@@ -40,13 +42,15 @@ export default async function AnalyzePage({ params }: { params: Promise<Params> 
 
   let evidence;
   try {
+    await enforceBudget("analysis");
     evidence = await collectEvidence({ owner, repo });
   } catch (error) {
     if (error instanceof GithubApiError && error.kind === "not_found") notFound();
-    throw error;
+    return <div className="mx-auto max-w-[1100px] px-4 py-6 sm:px-6"><Notice tone="warning">{error instanceof GithubApiError ? error.message : "This repository’s metadata report is temporarily unavailable."}</Notice><Link href="/analyze" className="mt-3 inline-flex text-sm text-accent-hover hover:underline">Back to analysis tools</Link></div>;
   }
 
   const analysis = analyzeRepository(evidence);
+  await recordAnalysis(evidence.repository.fullName);
 
   return (
     <div className="pb-16">
@@ -54,6 +58,10 @@ export default async function AnalyzePage({ params }: { params: Promise<Params> 
 
       <div className="mx-auto w-full max-w-[1100px] space-y-4 px-4 pt-5 sm:px-6">
         <Notice tone="info">{analysis.disclaimer}</Notice>
+        <div className="flex flex-wrap gap-2">
+          <Link href={`/repository/${owner}/${repo}/intelligence`} className="rounded-md border border-border bg-accent-soft px-3 py-1.5 text-xs text-accent-hover hover:underline">View health score and intelligence</Link>
+          <Link href={`/repository/${owner}/${repo}/chat`} className="rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-xs hover:underline">Ask AI about this repository</Link>
+        </div>
 
         {evidence.failed.length > 0 ? (
           <Notice tone="warning">

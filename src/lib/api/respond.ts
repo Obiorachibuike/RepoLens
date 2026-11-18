@@ -85,12 +85,12 @@ export function fromError(error: unknown): NextResponse<ApiErrorBody> {
   }
 
   // Unexpected: log server-side, return a generic message.
-  console.error("[repolens] unexpected API error:", error instanceof Error ? error.message : error);
+  console.error("[repolens] unexpected API error");
   return NextResponse.json<ApiErrorBody>(
     {
       error: {
         kind: "unknown",
-        message: "Something went wrong while talking to GitHub. Please try again.",
+        message: "RepoLens could not complete the request. Please try again.",
         hint: null,
         status: null,
         retryAfterSeconds: null,
@@ -165,7 +165,7 @@ export function sessionRequired(): NextResponse<ApiErrorBody> {
 
 /** Flattens Next.js URLSearchParams into the record our zod schemas expect. */
 export function searchParamsToRecord(url: URL): Record<string, string> {
-  const record: Record<string, string> = {};
+  const record: Record<string, string> = Object.create(null);
   for (const [key, value] of url.searchParams.entries()) {
     if (!(key in record)) record[key] = value;
   }

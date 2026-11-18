@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { after } from "next/server";
+import { trackBestEffort } from "@/lib/trending/store";
 import { ArrowRight, Flame, Sparkles, Telescope } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -88,8 +90,8 @@ interface LiveList {
 const LIVE_LISTS: LiveList[] = [
   {
     id: "rising",
-    title: "Rising this fortnight",
-    description: "Repositories created in the last 14 days that already passed 50 stars.",
+    title: "Recently created, by stars",
+    description: "Created within 14 days and currently at 50+ stars. Ranked by total stars, not measured growth.",
     query: `created:>=${isoDateDaysAgo(14)} stars:>=50`,
     sort: "stars",
     badge: "new",
@@ -139,6 +141,7 @@ async function fetchList(list: LiveList): Promise<ListResult> {
 
 export default async function DiscoverPage() {
   const results = await Promise.all(LIVE_LISTS.map(fetchList));
+  after(() => trackBestEffort(results.flatMap((list) => list.items.slice(0, 2)), "discovery"));
 
   return (
     <div className="mx-auto w-full max-w-[1240px] px-4 pb-16 sm:px-6">
@@ -154,6 +157,7 @@ export default async function DiscoverPage() {
           Curated research starting points plus live lists of what the open-source ecosystem is shipping right
           now. Every card runs a real search — nothing here is a mock list.
         </p>
+        <Link href="/trending" className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-accent-hover hover:underline">See measured growth on Trending <ArrowRight className="size-4" /></Link>
       </header>
 
       <section aria-labelledby="categories-heading" className="space-y-3">

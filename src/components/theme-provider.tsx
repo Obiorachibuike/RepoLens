@@ -58,16 +58,15 @@ export function ThemeProvider({
     setResolved(resolveTheme(next));
     applyTheme(next);
 
+  }, [initialTheme]);
+
+  React.useEffect(() => {
+    if (theme !== "system") return;
     const media = window.matchMedia("(prefers-color-scheme: light)");
-    const onChange = () => {
-      if ((stored ?? initialTheme) !== "system") return;
-      const value = resolveTheme("system");
-      setResolved(value);
-      applyTheme("system");
-    };
+    const onChange = () => { setResolved(resolveTheme("system")); applyTheme("system"); };
     media.addEventListener("change", onChange);
     return () => media.removeEventListener("change", onChange);
-  }, [initialTheme]);
+  }, [theme]);
 
   const setTheme = React.useCallback((next: Theme) => {
     setThemeState(next);

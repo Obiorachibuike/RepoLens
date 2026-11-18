@@ -1,0 +1,10 @@
+import { z } from "zod";
+export const languageFilter = z.string().trim().max(45).regex(/^[\p{L}\p{N}+#. ()_-]*$/u);
+export const contributionLabels = { first: "good first issue", help: "help wanted", docs: "documentation", bug: "bug" } as const;
+export const issueFilters = z.object({ language: languageFilter.default(""), label: z.enum(["first", "help", "docs", "bug"]).default("first"), unassigned: z.enum(["true", "false"]).default("true"), page: z.coerce.number().int().min(1).max(125).default(1) });
+export const categories = { active: "Active projects", beginner: "Beginner-friendly", growing: "Fast-growing", ai: "AI and machine learning", web: "Web development", mobile: "Mobile development", blockchain: "Blockchain", tools: "Developer tools", security: "Cybersecurity", backend: "Backend engineering" } as const;
+export const categorySchema = z.enum(["active", "beginner", "growing", "ai", "web", "mobile", "blockchain", "tools", "security", "backend"]);
+export const topicFilter = z.string().trim().toLowerCase().max(45).regex(/^[a-z0-9-]*$/);
+export const recommendationProfile = z.object({ category: categorySchema.default("active"), language: languageFilter.default(""), technology: topicFilter.default(""), skill: z.enum(["all", "beginner", "experienced"]).default("all") });
+export type RecommendationProfile = z.infer<typeof recommendationProfile>;
+export type IssueFilters = z.infer<typeof issueFilters>;

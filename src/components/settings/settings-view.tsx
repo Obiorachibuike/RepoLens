@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import * as React from "react";
 import { Database, KeyRound, Monitor, Moon, RefreshCw, Sparkles, Sun, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -82,7 +83,12 @@ export function SettingsView() {
       </header>
 
       <div className="space-y-4">
-        <Card>
+        <div className="flex flex-wrap gap-2 py-2 text-xs text-accent-hover">
+        <Link href="/recommendations" className="rounded-md border border-border px-3 py-2 hover:underline">Discovery preferences</Link>
+        <Link href="/usage" className="rounded-md border border-border px-3 py-2 hover:underline">AI usage</Link>
+        <Link href="/diagnostics" className="rounded-md border border-border px-3 py-2 hover:underline">Operator diagnostics</Link>
+      </div>
+      <Card>
           <CardHeader title="Appearance" description="Applied immediately and remembered in this browser" />
           <div className="flex flex-wrap gap-2 p-4">
             {(
@@ -185,7 +191,7 @@ export function SettingsView() {
               enabled={config.ai}
               enabledLabel="Configured"
               disabledLabel="Not required"
-              detail="Discovery modes use a deterministic local extractor, so search never depends on a paid AI service."
+              detail="Repository chat uses the configured provider. Search and project idea modes remain deterministic."
             />
           </div>
         </Card>
